@@ -1,0 +1,12 @@
+{
+    "update_steps": {
+        "UpdateDawLaneGestures": {
+            "dependencies": [
+                "DawContext",
+                "UIContext",
+                "LevelContext",
+                "PanelContext"
+            ]
+        }
+    }
+}

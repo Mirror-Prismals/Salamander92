@@ -1,0 +1,14 @@
+{
+  "update_steps": {
+    "UpdateCaveDecor": {
+      "dependencies": [
+        "LevelContext",
+        "InstanceContext",
+        "WorldContext",
+        "PlayerContext",
+        "VoxelWorldContext",
+        "RegistryContext"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "update_steps": {
+    "UpdateTreeSectionScheduler": {
+      "dependencies": [
+        "LevelContext",
+        "InstanceContext",
+        "WorldContext",
+        "PlayerContext",
+        "VoxelWorldContext",
+        "RegistryContext"
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+    "update_steps": {
+        "UpdateDawLaneModal": {
+            "dependencies": [
+                "DawContext",
+                "UIContext",
+                "LevelContext",
+                "PanelContext",
+                "AudioContext"
+            ]
+        }
+    }
+}

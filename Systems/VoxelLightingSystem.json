@@ -1,0 +1,10 @@
+{
+  "update_steps": {
+    "UpdateVoxelLighting": {
+      "dependencies": [
+        "VoxelWorldContext",
+        "RegistryContext"
+      ]
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "update_steps": {
+    "UpdateWaterFoliage": {
+      "dependencies": [
+        "LevelContext",
+        "InstanceContext",
+        "WorldContext",
+        "PlayerContext",
+        "VoxelWorldContext",
+        "RegistryContext"
+      ]
+    }
+  }
+}
