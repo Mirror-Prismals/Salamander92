@@ -104,7 +104,8 @@ namespace ChucKSystemLogic {
 
     static bool is_transient_gameplay_path(const std::string& path) {
         return path.find("Procedures/chuck/gameplay/") != std::string::npos
-            || path.find("Procedures/chuck/fishing/") != std::string::npos;
+            || path.find("Procedures/chuck/fishing/") != std::string::npos
+            || path.find("Procedures/chuck/daw/") != std::string::npos;
     }
 
     static int read_registry_int(const BaseSystem& baseSystem, const std::string& key, int fallback) {

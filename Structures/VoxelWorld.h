@@ -82,8 +82,10 @@ struct VoxelWorldContext {
     uint8_t defaultSkyLightLevel = static_cast<uint8_t>(15);
     std::unordered_map<VoxelSectionKey, VoxelSection, VoxelSectionKeyHash> sections;
     std::unordered_set<VoxelSectionKey, VoxelSectionKeyHash> dirtySections;
+    std::unordered_map<VoxelSectionKey, uint64_t, VoxelSectionKeyHash> dirtyTickets;
     std::unordered_map<VoxelSectionKey, VoxelChunkLifecycleState, VoxelSectionKeyHash> chunkStates;
     std::unordered_map<int, std::vector<VoxelSectionBuffers>> bufferPools;
+    uint64_t nextDirtyTicket = 1;
 
     void reset();
     VoxelChunkLifecycleState& ensureChunkState(const VoxelSectionKey& key);
@@ -99,5 +101,8 @@ struct VoxelWorldContext {
     uint8_t getBlockLightWorld(const glm::ivec3& worldPos) const;
     void setBlockWorld(const glm::ivec3& worldPos, uint32_t id, uint32_t color);
     void setBlock(const glm::ivec3& worldPos, uint32_t id, uint32_t color, bool markDirty = true);
+    uint64_t markSectionDirty(const VoxelSectionKey& key);
+    void clearSectionDirty(const VoxelSectionKey& key);
+    uint64_t getSectionDirtyTicket(const VoxelSectionKey& key) const;
     void releaseSection(const VoxelSectionKey& key);
 };

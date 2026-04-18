@@ -960,6 +960,21 @@ namespace TreeGenerationSystemLogic {
 
             return areStructureSectionsTerrainReady(requiredSections);
         }
+
+        int pineTreeHorizontalReach(const PineSpec& spec) {
+            float maxRadius = std::max(spec.canopyBottomRadius, spec.canopyTopRadius);
+            if (spec.canopyLowerExtension > 0) {
+                maxRadius = std::max(maxRadius, spec.canopyBottomRadius + spec.canopyLowerRadiusBoost);
+            }
+            return std::max(1, static_cast<int>(std::ceil(std::max(1.0f, maxRadius))));
+        }
+
+        bool sectionRangeIntersectsY(int sectionMinY,
+                                     int sectionMaxY,
+                                     int structureMinY,
+                                     int structureMaxY) {
+            return structureMaxY >= sectionMinY && structureMinY <= sectionMaxY;
+        }
     }
 
     void GetTreeFoliagePerfStats(size_t& pendingSections,
@@ -2143,13 +2158,25 @@ namespace TreeGenerationSystemLogic {
             const int sectionSize = sectionIt->second.size;
             const glm::ivec3 sectionCoord = key.coord;
             const int minX = sectionCoord.x * sectionSize;
+            const int minY = sectionCoord.y * sectionSize;
             const int minZ = sectionCoord.z * sectionSize;
             const int maxX = minX + sectionSize - 1;
+            const int maxY = minY + sectionSize - 1;
             const int maxZ = minZ + sectionSize - 1;
+            const PineSpec scanPineSpec = scaledPineSpecForTier(baseSpec, sectionScale);
+            const int pineTreeScanMargin = pineTreeHorizontalReach(scanPineSpec);
+            const int bareTreeScanMargin = 2;
+            const int jungleTreeScanMargin = std::max(2, jungleTreeCanopyRadius);
+            const int treeScanMargin = std::max({pineTreeScanMargin, bareTreeScanMargin, jungleTreeScanMargin});
+            const int scanMinX = minX - treeScanMargin;
+            const int scanMinZ = minZ - treeScanMargin;
+            const int scanMaxX = maxX + treeScanMargin;
+            const int scanMaxZ = maxZ + treeScanMargin;
             // Trees and surface foliage must complete atomically for a selected section, otherwise
             // chunks appear first and trees/grass trail behind over multiple frames.
-            const long long side = static_cast<long long>(sectionSize);
-            const long long fullColumns = std::max(1ll, side * side);
+            const long long scanSpanX = static_cast<long long>(scanMaxX) - static_cast<long long>(scanMinX) + 1ll;
+            const long long scanSpanZ = static_cast<long long>(scanMaxZ) - static_cast<long long>(scanMinZ) + 1ll;
+            const long long fullColumns = std::max(1ll, scanSpanX * scanSpanZ);
             const long long maxInt = static_cast<long long>(std::numeric_limits<int>::max());
             int treeColumnsPerSlice = static_cast<int>(std::min(fullColumns, maxInt));
 
@@ -2162,7 +2189,7 @@ namespace TreeGenerationSystemLogic {
                     if (touchedIt == voxelWorld.sections.end()) continue;
                     touchedIt->second.editVersion += 1;
                     touchedIt->second.dirty = true;
-                    voxelWorld.dirtySections.insert(touchedKey);
+                    voxelWorld.markSectionDirty(touchedKey);
                 }
                 if (getRegistryBool(baseSystem, "TreeFoliagePriorityRemesh", true)) {
                     const glm::ivec3 requestCell =
@@ -2285,13 +2312,13 @@ namespace TreeGenerationSystemLogic {
                     int tierZ = progress.scanTierZ;
                     int tierX = progress.scanTierX;
                     if (tierZ == std::numeric_limits<int>::min() || tierX == std::numeric_limits<int>::min()) {
-                        tierZ = minZ;
-                        tierX = minX;
+                        tierZ = scanMinZ;
+                        tierX = scanMinX;
                     }
                     int columnsProcessed = 0;
                     bool treeScanDone = false;
-                    while (tierZ <= maxZ && columnsProcessed < treeColumnsPerSlice) {
-                        while (tierX <= maxX && columnsProcessed < treeColumnsPerSlice) {
+                    while (tierZ <= scanMaxZ && columnsProcessed < treeColumnsPerSlice) {
+                        while (tierX <= scanMaxX && columnsProcessed < treeColumnsPerSlice) {
                             columnsProcessed += 1;
                             const int worldX = tierX * sectionScale;
                             const int worldZ = tierZ * sectionScale;
@@ -2317,7 +2344,7 @@ namespace TreeGenerationSystemLogic {
                                 && (biomeID == 1)
                                 && ((hash2D(worldX + 571, worldZ - 313) % static_cast<uint32_t>(meadowTreeSpawnModulo)) == 0u);
                             const bool wantsJungleTree =
-                                islandQuadrants && (biomeID == 3)
+                                islandQuadrants && (biomeID == 0 || biomeID == 3)
                                 && ((hash2D(worldX + 173, worldZ - 911) % static_cast<uint32_t>(jungleTreeSpawnModulo)) == 0u);
                             const bool wantsBareTree =
                                 (biomeID == 4)
@@ -2362,20 +2389,19 @@ namespace TreeGenerationSystemLogic {
                                     ? trunkProtoB->prototypeID
                                     : trunkProtoA->prototypeID;
                                 const int topPrototypeID = topLogPrototypeFor(prototypes, nubPrototypeID);
-
-                                if (!arePineTreeSectionsReady(
-                                        sectionSize,
-                                        tierX,
-                                        groundY,
-                                        tierZ,
-                                        treeSpec)) {
-                                    unresolvedDependencies = true;
+                                const int pineTreeMinY = groundY + 1;
+                                const int pineCanopyTopY = groundY + treeSpec.trunkHeight - treeSpec.canopyOffset
+                                    + treeSpec.canopyLayers - 1;
+                                const int pineTreeMaxY = std::max(groundY + treeSpec.trunkHeight, pineCanopyTopY);
+                                if (!sectionRangeIntersectsY(minY, maxY, pineTreeMinY, pineTreeMaxY)) {
                                     tierX += 1;
                                     continue;
                                 }
 
                                 if (!trunkColumnCanExist(voxelWorld,
                                                          sectionTier,
+                                                         sectionCoord,
+                                                         sectionSize,
                                                          trunkProtoA->prototypeID,
                                                          trunkProtoB->prototypeID,
                                                          tierX,
@@ -2423,21 +2449,17 @@ namespace TreeGenerationSystemLogic {
                                 const int bareTrunkHeight = bareTreeTrunkMin + static_cast<int>(
                                     bareSeed % static_cast<uint32_t>(bareHeightSpan)
                                 );
-
-                                if (!areBareTreeSectionsReady(
-                                        sectionSize,
-                                        tierX,
-                                        groundY,
-                                        tierZ,
-                                        bareTrunkHeight,
-                                        bareSeed)) {
-                                    unresolvedDependencies = true;
+                                const int bareTreeMinY = groundY + 1;
+                                const int bareTreeMaxY = groundY + bareTrunkHeight + 2;
+                                if (!sectionRangeIntersectsY(minY, maxY, bareTreeMinY, bareTreeMaxY)) {
                                     tierX += 1;
                                     continue;
                                 }
 
                                 if (!trunkColumnCanExist(voxelWorld,
                                                          sectionTier,
+                                                         sectionCoord,
+                                                         sectionSize,
                                                          bareTrunkID,
                                                          bareTrunkID,
                                                          tierX,
@@ -2494,21 +2516,18 @@ namespace TreeGenerationSystemLogic {
                                 const int jungleHeightSpan = jungleTreeTrunkMax - jungleTreeTrunkMin + 1;
                                 const int jungleTrunkHeight = jungleTreeTrunkMin
                                     + static_cast<int>(jungleSeed % static_cast<uint32_t>(jungleHeightSpan));
-
-                                if (!areJungleTreeSectionsReady(
-                                        sectionSize,
-                                        tierX,
-                                        groundY,
-                                        tierZ,
-                                        jungleTrunkHeight,
-                                        jungleTreeCanopyRadius)) {
-                                    unresolvedDependencies = true;
+                                const int jungleCanopyRadius = std::max(2, jungleTreeCanopyRadius);
+                                const int jungleTreeMinY = groundY + 1;
+                                const int jungleTreeMaxY = groundY + jungleTrunkHeight + 2 + jungleCanopyRadius;
+                                if (!sectionRangeIntersectsY(minY, maxY, jungleTreeMinY, jungleTreeMaxY)) {
                                     tierX += 1;
                                     continue;
                                 }
 
                                 if (!trunkColumnCanExist(voxelWorld,
                                                          sectionTier,
+                                                         sectionCoord,
+                                                         sectionSize,
                                                          jungleTrunkID,
                                                          jungleTrunkID,
                                                          tierX,
@@ -2556,13 +2575,13 @@ namespace TreeGenerationSystemLogic {
 
                             tierX += 1;
                         }
-                        if (tierX > maxX) {
-                            tierX = minX;
+                        if (tierX > scanMaxX) {
+                            tierX = scanMinX;
                             tierZ += 1;
                         }
                     }
 
-                    if (tierZ > maxZ) {
+                    if (tierZ > scanMaxZ) {
                         treeScanDone = true;
                     }
                     commitTouchedSections();

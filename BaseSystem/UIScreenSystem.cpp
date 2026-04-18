@@ -139,6 +139,7 @@ namespace UIScreenSystemLogic {
                 ui.fullscreenActive = true;
                 ui.activeWorldIndex = player.targetedWorldIndex;
                 ui.activeInstanceID = computerInst->instanceID;
+                DawSfxSystemLogic::QueueOpen(baseSystem);
                 ui.consumeClick = true;
                 ui.uiLeftDown = ui.uiLeftPressed = ui.uiLeftReleased = false;
                 if (baseSystem.world) {
@@ -156,6 +157,7 @@ namespace UIScreenSystemLogic {
         if (ui.active && pDown && !pPressedLast) {
             ui.active = false;
             ui.fullscreenActive = false;
+            DawSfxSystemLogic::QueueClose(baseSystem);
             if (baseSystem.world) {
                 auto it = baseSystem.world->colorLibrary.find("White");
                 if (it != baseSystem.world->colorLibrary.end()) setComputerColor(baseSystem, it->second);

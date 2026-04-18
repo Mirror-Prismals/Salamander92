@@ -1,0 +1,10 @@
+{
+    "update_steps": {
+        "UpdateVoxelMeshDebug": {
+            "dependencies": [
+                "VoxelWorldContext",
+                "VoxelRenderContext"
+            ]
+        }
+    }
+}

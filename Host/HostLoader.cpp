@@ -74,6 +74,7 @@ bool Host::checkDependencies(const std::vector<std::string>& deps) {
         if (dep == "FishingContext" && !baseSystem.fishing) return false;
         if (dep == "GemContext" && !baseSystem.gems) return false;
         if (dep == "UIContext" && !baseSystem.ui) return false;
+        if (dep == "DawSfxContext" && !baseSystem.dawSfx) return false;
         if (dep == "SecurityCameraContext" && !baseSystem.securityCamera) return false;
         if (dep == "UIStampingContext" && !baseSystem.uiStamp) return false;
         if (dep == "PanelContext" && !baseSystem.panel) return false;

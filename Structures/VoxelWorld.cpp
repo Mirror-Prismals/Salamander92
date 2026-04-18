@@ -31,7 +31,9 @@ namespace {
 void VoxelWorldContext::reset() {
     sections.clear();
     dirtySections.clear();
+    dirtyTickets.clear();
     chunkStates.clear();
+    nextDirtyTicket = 1;
 }
 
 VoxelChunkLifecycleState& VoxelWorldContext::ensureChunkState(const VoxelSectionKey& key) {
@@ -190,12 +192,33 @@ void VoxelWorldContext::setBlock(const glm::ivec3& worldPos, uint32_t id, uint32
     if (markDirty) {
         section.editVersion += 1;
         section.dirty = true;
-        dirtySections.insert(key);
+        markSectionDirty(key);
     }
 
     if (section.nonAirCount <= 0) {
         releaseSection(key);
     }
+}
+
+uint64_t VoxelWorldContext::markSectionDirty(const VoxelSectionKey& key) {
+    dirtySections.insert(key);
+    uint64_t ticket = nextDirtyTicket++;
+    if (ticket == 0) {
+        ticket = nextDirtyTicket++;
+    }
+    dirtyTickets[key] = ticket;
+    return ticket;
+}
+
+void VoxelWorldContext::clearSectionDirty(const VoxelSectionKey& key) {
+    dirtySections.erase(key);
+    dirtyTickets.erase(key);
+}
+
+uint64_t VoxelWorldContext::getSectionDirtyTicket(const VoxelSectionKey& key) const {
+    auto it = dirtyTickets.find(key);
+    if (it == dirtyTickets.end()) return 0;
+    return it->second;
 }
 
 void VoxelWorldContext::releaseSection(const VoxelSectionKey& key) {
@@ -208,7 +231,7 @@ void VoxelWorldContext::releaseSection(const VoxelSectionKey& key) {
     buffers.blockLight = std::move(it->second.blockLight);
     releaseBuffers(*this, it->second.size, std::move(buffers));
     sections.erase(it);
-    dirtySections.erase(key);
+    clearSectionDirty(key);
     auto chunkIt = chunkStates.find(key);
     if (chunkIt != chunkStates.end()) {
         chunkIt->second.hasSection = false;

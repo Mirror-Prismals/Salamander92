@@ -1716,7 +1716,7 @@ namespace TerrainSystemLogic {
                     // Neighbor sections should remesh, but not invalidate in-flight meshes repeatedly.
                     if (bumpVersion) it->second.editVersion += 1;
                     it->second.dirty = true;
-                    voxelWorld.dirtySections.insert(dirtyKey);
+                    voxelWorld.markSectionDirty(dirtyKey);
                 };
 
                 markSectionDirty(sectionCoord, true);

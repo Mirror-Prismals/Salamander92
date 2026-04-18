@@ -147,16 +147,23 @@
 
         bool trunkColumnCanExist(const VoxelWorldContext& voxelWorld,
                                  int sectionTier,
+                                 const glm::ivec3& rootSectionCoord,
+                                 int sectionSize,
                                  int trunkPrototypeIDA,
                                  int trunkPrototypeIDB,
                                  int worldX,
                                  int groundY,
                                  int worldZ,
                                  int trunkHeight) {
-            // Require valid terrain support under the trunk.
-            if (getBlockAt(voxelWorld, glm::ivec3(worldX, groundY, worldZ)) == 0u) return false;
+            (void)sectionTier;
+            const glm::ivec3 groundCell(worldX, groundY, worldZ);
+            if (cellBelongsToSection(groundCell, rootSectionCoord, sectionSize)
+                && getBlockAt(voxelWorld, groundCell) == 0u) {
+                return false;
+            }
             for (int i = 1; i <= trunkHeight; ++i) {
                 glm::ivec3 pos(worldX, groundY + i, worldZ);
+                if (!cellBelongsToSection(pos, rootSectionCoord, sectionSize)) continue;
                 uint32_t id = getBlockAt(voxelWorld, pos);
                 if (id == 0) continue;
                 if (isTrunkPrototype(id, trunkPrototypeIDA, trunkPrototypeIDB)) continue;
@@ -195,6 +202,7 @@
         void applyLeafFanShell(VoxelWorldContext& voxelWorld,
                                int sectionTier,
                                int sectionSize,
+                               const glm::ivec3& rootSectionCoord,
                                int leafFanPrototypeID,
                                uint32_t leafColor,
                                const std::vector<glm::ivec3>& placedLeafCells,
@@ -202,6 +210,7 @@
                                bool& modified) {
             if (leafFanPrototypeID < 0 || placedLeafCells.empty()) return;
             for (const glm::ivec3& cell : placedLeafCells) {
+                if (!cellBelongsToSection(cell, rootSectionCoord, sectionSize)) continue;
                 if (!leafCellTouchesAir(voxelWorld, sectionTier, cell)) continue;
                 if (getBlockAt(voxelWorld, cell) == 0u) continue;
                 voxelWorld.setBlock(cell,
@@ -209,11 +218,7 @@
                     leafColor,
                     false
                 );
-                outTouchedSections.insert(glm::ivec3(
-                    floorDivInt(cell.x, sectionSize),
-                    floorDivInt(cell.y, sectionSize),
-                    floorDivInt(cell.z, sectionSize)
-                ));
+                outTouchedSections.insert(rootSectionCoord);
                 modified = true;
             }
         }
@@ -289,15 +294,11 @@
                               const PineSpec& spec,
                               std::unordered_set<glm::ivec3, IVec3Hash>& outTouchedSections,
                               bool& modified) {
-            (void)rootSectionCoord;
             auto setIfEmpty = [&](const glm::ivec3& cell, uint32_t id, uint32_t color) -> bool {
+                if (!cellBelongsToSection(cell, rootSectionCoord, sectionSize)) return false;
                 if (getBlockAt(voxelWorld, cell) != 0u) return false;
                 voxelWorld.setBlock(cell, id, color, false);
-                outTouchedSections.insert(glm::ivec3(
-                    floorDivInt(cell.x, sectionSize),
-                    floorDivInt(cell.y, sectionSize),
-                    floorDivInt(cell.z, sectionSize)
-                ));
+                outTouchedSections.insert(rootSectionCoord);
                 modified = true;
                 return true;
             };
@@ -338,6 +339,7 @@
                 voxelWorld,
                 sectionTier,
                 sectionSize,
+                rootSectionCoord,
                 leafFanPrototypeID,
                 leafColor,
                 placedLeafCells,
@@ -371,15 +373,11 @@
                                   std::unordered_set<glm::ivec3, IVec3Hash>& outTouchedSections,
                                   bool& modified) {
             if (trunkPrototypeID < 0 || trunkHeight < 2) return;
-            (void)rootSectionCoord;
             auto setIfEmpty = [&](const glm::ivec3& cell, uint32_t id, uint32_t color) -> bool {
+                if (!cellBelongsToSection(cell, rootSectionCoord, sectionSize)) return false;
                 if (getBlockAt(voxelWorld, cell) != 0u) return false;
                 voxelWorld.setBlock(cell, id, color, false);
-                outTouchedSections.insert(glm::ivec3(
-                    floorDivInt(cell.x, sectionSize),
-                    floorDivInt(cell.y, sectionSize),
-                    floorDivInt(cell.z, sectionSize)
-                ));
+                outTouchedSections.insert(rootSectionCoord);
                 modified = true;
                 return true;
             };
@@ -480,15 +478,11 @@
                                     int canopyRadius,
                                     std::unordered_set<glm::ivec3, IVec3Hash>& outTouchedSections,
                                     bool& modified) {
-            (void)rootSectionCoord;
             auto setIfEmpty = [&](const glm::ivec3& cell, uint32_t id, uint32_t color) -> bool {
+                if (!cellBelongsToSection(cell, rootSectionCoord, sectionSize)) return false;
                 if (getBlockAt(voxelWorld, cell) != 0u) return false;
                 voxelWorld.setBlock(cell, id, color, false);
-                outTouchedSections.insert(glm::ivec3(
-                    floorDivInt(cell.x, sectionSize),
-                    floorDivInt(cell.y, sectionSize),
-                    floorDivInt(cell.z, sectionSize)
-                ));
+                outTouchedSections.insert(rootSectionCoord);
                 modified = true;
                 return true;
             };
@@ -527,6 +521,7 @@
                 voxelWorld,
                 sectionTier,
                 sectionSize,
+                rootSectionCoord,
                 leafFanPrototypeID,
                 leafColor,
                 placedLeafCells,

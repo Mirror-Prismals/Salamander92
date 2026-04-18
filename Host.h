@@ -82,6 +82,51 @@ private:
 struct SkyColorKey { float time; glm::vec3 top; glm::vec3 bottom; };
 struct FaceTextureSet { int all = -1; int top = -1; int bottom = -1; int side = -1; };
 struct FaceInstanceRenderData { glm::vec3 position; glm::vec3 color; int tileIndex = -1; float alpha = 1.0f; glm::vec4 ao = glm::vec4(1.0f); glm::vec2 scale = glm::vec2(1.0f); glm::vec2 uvScale = glm::vec2(1.0f); };
+struct VoxelMeshingPrototypeTraits {
+    bool renderableBlock = false;
+    bool opaqueBlock = false;
+    bool leaf = false;
+    bool binaryGreedyRenderable = false;
+    bool tallGrass = false;
+    bool shortGrass = false;
+    bool flower = false;
+    bool cavePot = false;
+    bool leafFanPlant = false;
+    bool stick = false;
+    bool stickX = false;
+    bool stickZ = false;
+    bool grassCoverX = false;
+    bool grassCoverZ = false;
+    bool stonePebbleX = false;
+    bool stonePebbleZ = false;
+    bool surfaceStonePebble = false;
+    bool petalPile = false;
+    bool water = false;
+    bool transparentWave = false;
+    std::array<int, 6> faceTiles{{-1, -1, -1, -1, -1, -1}};
+};
+struct VoxelMeshingSnapshot {
+    VoxelSectionKey sectionKey{};
+    glm::ivec3 sectionBase{0};
+    int sectionSize = 0;
+    int nonAirCount = 0;
+    uint64_t dirtyTicket = 0;
+    bool binaryGreedyEnabled = true;
+    bool voxelLightingEnabled = true;
+    float voxelLightingStrength = 1.0f;
+    float voxelLightingMinBrightness = 0.08f;
+    float voxelLightingGamma = 1.35f;
+    std::vector<uint32_t> paddedIds;
+    std::vector<uint32_t> paddedColors;
+    std::vector<uint8_t> paddedCombinedLight;
+};
+struct PreparedVoxelSectionMesh {
+    std::array<std::vector<FaceInstanceRenderData>, 6> opaqueFaces;
+    std::array<std::vector<FaceInstanceRenderData>, 6> alphaFaces;
+    uint64_t dirtyTicket = 0;
+    bool usesTexturedFaceBuffers = true;
+    bool builtWithFaceCulling = false;
+};
 struct ExpanseOceanBand { float minZ = 0.0f; float maxZ = 0.0f; };
 struct ExpanseConfig {
     std::string terrainWorld = "ExpanseTerrainWorld";
@@ -235,6 +280,7 @@ struct ChunkRenderBuffers {
 };
 struct VoxelRenderContext {
     std::unordered_map<VoxelSectionKey, ChunkRenderBuffers, VoxelSectionKeyHash> renderBuffers;
+    std::unordered_map<VoxelSectionKey, PreparedVoxelSectionMesh, VoxelSectionKeyHash> preparedMeshes;
     std::unordered_set<VoxelSectionKey, VoxelSectionKeyHash> renderBuffersDirty;
     bool initialized = false;
 };
@@ -871,6 +917,17 @@ struct UIContext {
     bool buttonCacheBuilt = false;
     LevelContext* buttonCacheLevel = nullptr;
     std::vector<EntityInstance*> buttonInstances;
+};
+struct DawSfxContext {
+    int pendingButtonClickCount = 0;
+    int pendingOpenCount = 0;
+    int pendingCloseCount = 0;
+    double lastButtonClickTime = -1000.0;
+    double lastOpenTime = -1000.0;
+    double lastCloseTime = -1000.0;
+    std::string buttonClickScriptPath = "Procedures/chuck/daw/button_click.ck";
+    std::string openScriptPath = "Procedures/chuck/daw/daw_open.ck";
+    std::string closeScriptPath = "Procedures/chuck/daw/daw_close.ck";
 };
 struct SecurityCameraContext {
     bool cacheBuilt = false;
@@ -1534,6 +1591,7 @@ struct BaseSystem {
     std::unique_ptr<FishingContext> fishing;
     std::unique_ptr<GemContext> gems;
     std::unique_ptr<UIContext> ui;
+    std::unique_ptr<DawSfxContext> dawSfx;
     std::unique_ptr<SecurityCameraContext> securityCamera;
     std::unique_ptr<UIStampingContext> uiStamp;
     std::unique_ptr<PanelContext> panel;
@@ -1723,6 +1781,12 @@ namespace MirrorSystemLogic { void UpdateMirrors(BaseSystem&, std::vector<Entity
 namespace BootSequenceSystemLogic { void UpdateBootSequence(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle); }
 namespace ComputerCursorSystemLogic { void UpdateComputerCursor(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle); }
 namespace ButtonSystemLogic { void UpdateButtons(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle); bool GetButtonToggled(int instanceID); void SetButtonToggled(int instanceID, bool toggled); }
+namespace DawSfxSystemLogic {
+    void QueueButtonClick(BaseSystem&);
+    void QueueOpen(BaseSystem&);
+    void QueueClose(BaseSystem&);
+    void UpdateDawSfx(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle);
+}
 namespace PanelSystemLogic { void UpdatePanels(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle); void RenderPanels(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle); }
 namespace PanelRenderSystemLogic {
     void Step01_RenderFontsTimeline(BaseSystem&, std::vector<Entity>&, float, PlatformWindowHandle);

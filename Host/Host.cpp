@@ -312,6 +312,7 @@ void Host::registerSystemFunctions() {
     functionRegistry["UpdateComputerCursor"] = ComputerCursorSystemLogic::UpdateComputerCursor;
     functionRegistry["UpdateButtons"] = ButtonSystemLogic::UpdateButtons;
     functionRegistry["UpdateButtonInput"] = ButtonSystemLogic::UpdateButtonInput;
+    functionRegistry["UpdateDawSfx"] = DawSfxSystemLogic::UpdateDawSfx;
     functionRegistry["RenderButtonsSide"] = ButtonSystemLogic::RenderButtonsSide;
     functionRegistry["RenderButtonsTopBottom"] = ButtonSystemLogic::RenderButtonsTopBottom;
     functionRegistry["03_RenderButtonsSide"] = PanelRenderSystemLogic::Step03_RenderButtonsSide;
@@ -389,6 +390,7 @@ void Host::init() {
     baseSystem.fishing = std::make_unique<FishingContext>();
     baseSystem.gems = std::make_unique<GemContext>();
     baseSystem.ui = std::make_unique<UIContext>();
+    baseSystem.dawSfx = std::make_unique<DawSfxContext>();
     baseSystem.securityCamera = std::make_unique<SecurityCameraContext>();
     baseSystem.uiStamp = std::make_unique<UIStampingContext>();
     baseSystem.panel = std::make_unique<PanelContext>();
@@ -570,6 +572,7 @@ void Host::reloadLevel(const std::string& levelName) {
     if (baseSystem.font) baseSystem.font = std::make_unique<FontContext>();
     if (baseSystem.uiStamp) baseSystem.uiStamp = std::make_unique<UIStampingContext>();
     if (baseSystem.panel) baseSystem.panel = std::make_unique<PanelContext>();
+    if (baseSystem.dawSfx) baseSystem.dawSfx = std::make_unique<DawSfxContext>();
     if (baseSystem.rayTracedAudio) {
         baseSystem.rayTracedAudio->sourceCacheBuilt = false;
         baseSystem.rayTracedAudio->sourceInstances.clear();

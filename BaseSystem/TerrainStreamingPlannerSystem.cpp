@@ -532,8 +532,9 @@ namespace TerrainSystemLogic {
         }
 
         int streamRadiusWorld(const VoxelWorldContext& voxelWorld) {
-            // Fixed TU19-style architecture: single-radius section streaming.
-            constexpr int kStreamRadiusChunks = 20;
+            // Keep the default stream radius tight enough that nearby terrain can fully materialize
+            // before the generator gets buried under far-field backlog.
+            constexpr int kStreamRadiusChunks = 10;
             const long long span = static_cast<long long>(sectionSizeForSection(voxelWorld));
             long long radius = span * static_cast<long long>(kStreamRadiusChunks);
             if (radius > 2000000000LL) radius = 2000000000LL;
@@ -742,7 +743,7 @@ namespace TerrainSystemLogic {
                 return requiredMask;
             };
             auto areFeatureDependenciesReady = [&](const VoxelSectionKey& key) {
-                const bool gateEnabled = getRegistryBool(baseSystem, "voxelFeatureNeighborGateEnabled", true);
+                const bool gateEnabled = getRegistryBool(baseSystem, "voxelFeatureNeighborGateEnabled", false);
                 if (!gateEnabled) return true;
                 VoxelChunkLifecycleState& state = voxelWorld.ensureChunkState(key);
                 if (!state.featureDependencyMaskInitialized) {
@@ -1111,9 +1112,18 @@ namespace TerrainSystemLogic {
                     while (desiredColumnsBudget > 0
                            && g_voxelDesiredRebuild.orderCursor < g_voxelDesiredRebuild.sectionOrderXZ.size()) {
                         const glm::ivec3 sectionCoord = g_voxelDesiredRebuild.sectionOrderXZ[g_voxelDesiredRebuild.orderCursor++];
-                        const int tier0SurfaceDepthSections = 2;
-                        const int tier0SurfaceUpSections = 1;
-                        const int tier0CameraVerticalPadSections = 0;
+                        const int tier0SurfaceDepthSections = std::max(
+                            0,
+                            getRegistryInt(baseSystem, "voxelSurfaceDepthSections", 1)
+                        );
+                        const int tier0SurfaceUpSections = std::max(
+                            0,
+                            getRegistryInt(baseSystem, "voxelSurfaceUpSections", 0)
+                        );
+                        const int tier0CameraVerticalPadSections = std::max(
+                            0,
+                            getRegistryInt(baseSystem, "voxelSurfaceCameraPadSections", 0)
+                        );
                         std::vector<int> yOrder;
                         yOrder.reserve(static_cast<size_t>(
                             (tier0SurfaceDepthSections + tier0SurfaceUpSections + 1) * 5
@@ -1419,9 +1429,18 @@ namespace TerrainSystemLogic {
                         const int sectionRadius = static_cast<int>(std::ceil(static_cast<float>(radius) / static_cast<float>(size * scale)));
                         glm::ivec3 cameraCell = glm::ivec3(glm::floor(cameraPos / static_cast<float>(scale)));
                         glm::ivec3 centerSection = floorDivVec(cameraCell, size);
-                        const int tier0SurfaceDepthSections = 2;
-                        const int tier0SurfaceUpSections = 1;
-                        const int tier0CameraVerticalPadSections = 0;
+                        const int tier0SurfaceDepthSections = std::max(
+                            0,
+                            getRegistryInt(baseSystem, "voxelSurfaceDepthSections", 1)
+                        );
+                        const int tier0SurfaceUpSections = std::max(
+                            0,
+                            getRegistryInt(baseSystem, "voxelSurfaceUpSections", 0)
+                        );
+                        const int tier0CameraVerticalPadSections = std::max(
+                            0,
+                            getRegistryInt(baseSystem, "voxelSurfaceCameraPadSections", 0)
+                        );
                         const int minY = streamMinYTier0;
                         const int maxY = computeExpanseMaxY(baseSystem, worldCtx, cfg);
                         const int minSectionY = floorDivInt(minY, scale * size);
@@ -1912,7 +1931,7 @@ namespace TerrainSystemLogic {
             }
 
             // Continue heavy post-feature terrain phases (waterfalls/chalk/lava/obsidian)
-            // outside the base-generation queue so chunk visibility is not blocked.
+            // outside the base-generation queue so section generation can keep progressing.
             const int featureSectionsPerFrame = std::max(
                 0,
                 getRegistryInt(baseSystem, "voxelFeatureSectionsPerFrame", 6)

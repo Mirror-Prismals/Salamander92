@@ -206,6 +206,42 @@ namespace WorldRenderSystemLogic {
             0,
             RenderInitSystemLogic::getRegistryInt(baseSystem, "voxelRenderMaxVisibleSections", 512)
         );
+        auto collectVisibleVoxelRenderSections = [&](const glm::vec3& cameraPos,
+                                                     std::vector<VisibleVoxelRenderSection>& outSections) {
+            outSections.clear();
+            if (!useVoxelRendering || !baseSystem.voxelWorld || !baseSystem.voxelRender) return;
+            VoxelWorldContext& voxelWorld = *baseSystem.voxelWorld;
+            VoxelRenderContext& voxelRender = *baseSystem.voxelRender;
+            outSections.reserve(voxelRender.renderBuffers.size());
+            for (const auto& [sectionKey, buffers] : voxelRender.renderBuffers) {
+                auto secIt = voxelWorld.sections.find(sectionKey);
+                if (secIt == voxelWorld.sections.end()) continue;
+                const VoxelSection& section = secIt->second;
+                if (!mapViewActive
+                    && !RenderInitSystemLogic::shouldRenderVoxelSection(baseSystem, section, cameraPos)) {
+                    continue;
+                }
+                const float span = static_cast<float>(section.size);
+                const glm::vec3 center(
+                    (static_cast<float>(section.coord.x) + 0.5f) * span,
+                    (static_cast<float>(section.coord.y) + 0.5f) * span,
+                    (static_cast<float>(section.coord.z) + 0.5f) * span
+                );
+                const glm::vec3 delta = center - cameraPos;
+                outSections.push_back({&buffers, glm::dot(delta, delta)});
+            }
+            if (voxelRenderMaxVisibleSections > 0
+                && static_cast<int>(outSections.size()) > voxelRenderMaxVisibleSections) {
+                std::sort(
+                    outSections.begin(),
+                    outSections.end(),
+                    [](const VisibleVoxelRenderSection& a, const VisibleVoxelRenderSection& b) {
+                        return a.dist2 < b.dist2;
+                    }
+                );
+                outSections.resize(static_cast<size_t>(voxelRenderMaxVisibleSections));
+            }
+        };
 
 
         for (size_t worldIndex = 0; worldIndex < level.worlds.size(); ++worldIndex) {
@@ -349,37 +385,7 @@ namespace WorldRenderSystemLogic {
         setBlendModeAlpha();
 
         if (useVoxelRendering) {
-            VoxelWorldContext& voxelWorld = *baseSystem.voxelWorld;
-            VoxelRenderContext& voxelRender = *baseSystem.voxelRender;
-            visibleVoxelRenderSections.reserve(voxelRender.renderBuffers.size());
-            for (const auto& [sectionKey, buffers] : voxelRender.renderBuffers) {
-                auto secIt = voxelWorld.sections.find(sectionKey);
-                if (secIt == voxelWorld.sections.end()) continue;
-                const VoxelSection& section = secIt->second;
-                if (!mapViewActive
-                    && !RenderInitSystemLogic::shouldRenderVoxelSection(baseSystem, section, playerPos)) {
-                    continue;
-                }
-                const float span = static_cast<float>(section.size);
-                const glm::vec3 center(
-                    (static_cast<float>(section.coord.x) + 0.5f) * span,
-                    (static_cast<float>(section.coord.y) + 0.5f) * span,
-                    (static_cast<float>(section.coord.z) + 0.5f) * span
-                );
-                const glm::vec3 delta = center - playerPos;
-                visibleVoxelRenderSections.push_back({&buffers, glm::dot(delta, delta)});
-            }
-            if (voxelRenderMaxVisibleSections > 0
-                && static_cast<int>(visibleVoxelRenderSections.size()) > voxelRenderMaxVisibleSections) {
-                std::sort(
-                    visibleVoxelRenderSections.begin(),
-                    visibleVoxelRenderSections.end(),
-                    [](const VisibleVoxelRenderSection& a, const VisibleVoxelRenderSection& b) {
-                        return a.dist2 < b.dist2;
-                    }
-                );
-                visibleVoxelRenderSections.resize(static_cast<size_t>(voxelRenderMaxVisibleSections));
-            }
+            collectVisibleVoxelRenderSections(playerPos, visibleVoxelRenderSections);
         }
 
         for (int i = 0; i < static_cast<int>(RenderBehavior::COUNT); ++i) {
@@ -640,6 +646,8 @@ namespace WorldRenderSystemLogic {
             const glm::mat4 reflectionView = view * reflectionTransform;
             glm::vec3 reflectionCameraPos = playerPos;
             reflectionCameraPos.y = 2.0f * waterReflectionPlaneY - playerPos.y;
+            std::vector<VisibleVoxelRenderSection> visibleVoxelReflectionSections;
+            collectVisibleVoxelRenderSections(reflectionCameraPos, visibleVoxelReflectionSections);
 
             renderBackend.beginOffscreenColorPass(
                 renderer.waterReflectionFBO,
@@ -678,24 +686,15 @@ namespace WorldRenderSystemLogic {
                     || currentBehavior == RenderBehavior::ANIMATED_TRANSPARENT_WAVE) {
                     continue;
                 }
-                if (useVoxelRendering && baseSystem.voxelWorld && baseSystem.voxelRender) {
-                    VoxelWorldContext& voxelWorld = *baseSystem.voxelWorld;
-                    VoxelRenderContext& voxelRender = *baseSystem.voxelRender;
-                    for (const auto& [sectionKey, buffers] : voxelRender.renderBuffers) {
-                        auto secIt = voxelWorld.sections.find(sectionKey);
-                        if (secIt == voxelWorld.sections.end()) continue;
-                        const VoxelSection& section = secIt->second;
-                        if (!mapViewActive
-                            && !RenderInitSystemLogic::shouldRenderVoxelSection(baseSystem, section, reflectionCameraPos)) {
-                            continue;
-                        }
-                        if (buffers.usesTexturedFaceBuffers) continue;
-                        int count = buffers.counts[i];
+                if (useVoxelRendering) {
+                    for (const auto& section : visibleVoxelReflectionSections) {
+                        if (section.buffers->usesTexturedFaceBuffers) continue;
+                        int count = section.buffers->counts[i];
                         if (count <= 0) continue;
                         renderer.blockShader->setFloat("instanceScale", 1.0f);
                         renderer.blockShader->setInt("behaviorType", i);
-                        if (buffers.vaos[i] == 0) continue;
-                        renderBackend.bindVertexArray(buffers.vaos[i]);
+                        if (section.buffers->vaos[i] == 0) continue;
+                        renderBackend.bindVertexArray(section.buffers->vaos[i]);
                         renderBackend.drawArraysTrianglesInstanced(0, 36, count);
                     }
                     renderer.blockShader->setFloat("instanceScale", 1.0f);
@@ -782,9 +781,7 @@ namespace WorldRenderSystemLogic {
                 setCullEnabled(false);
             }
 
-            if (useVoxelRendering && renderer.faceShader && renderer.faceVAO && baseSystem.voxelWorld && baseSystem.voxelRender) {
-                VoxelWorldContext& voxelWorld = *baseSystem.voxelWorld;
-                VoxelRenderContext& voxelRender = *baseSystem.voxelRender;
+            if (useVoxelRendering && renderer.faceShader && renderer.faceVAO) {
                 setBlendEnabled(true);
                 setBlendModeAlpha();
 
@@ -814,21 +811,14 @@ namespace WorldRenderSystemLogic {
                 } else {
                     setCullBackFaceCCWEnabled(true);
                 }
-                for (const auto& [sectionKey, buffers] : voxelRender.renderBuffers) {
-                    if (!buffers.usesTexturedFaceBuffers) continue;
-                    auto secIt = voxelWorld.sections.find(sectionKey);
-                    if (secIt == voxelWorld.sections.end()) continue;
-                    const VoxelSection& section = secIt->second;
-                    if (!mapViewActive
-                        && !RenderInitSystemLogic::shouldRenderVoxelSection(baseSystem, section, reflectionCameraPos)) {
-                        continue;
-                    }
+                for (const auto& section : visibleVoxelReflectionSections) {
+                    if (!section.buffers->usesTexturedFaceBuffers) continue;
                     renderer.faceShader->setInt("sectionTier", 0);
                     for (int faceType = 0; faceType < 6; ++faceType) {
-                        int count = buffers.faceBuffers.opaqueCounts[faceType];
-                        if (count > 0 && buffers.faceBuffers.opaqueVaos[faceType] != 0) {
+                        int count = section.buffers->faceBuffers.opaqueCounts[faceType];
+                        if (count > 0 && section.buffers->faceBuffers.opaqueVaos[faceType] != 0) {
                             renderer.faceShader->setInt("faceType", faceType);
-                            renderBackend.bindVertexArray(buffers.faceBuffers.opaqueVaos[faceType]);
+                            renderBackend.bindVertexArray(section.buffers->faceBuffers.opaqueVaos[faceType]);
                             renderBackend.drawArraysTrianglesInstanced(0, 6, count);
                         }
                     }
@@ -841,21 +831,14 @@ namespace WorldRenderSystemLogic {
                 } else {
                     setCullBackFaceCCWEnabled(true);
                 }
-                for (const auto& [sectionKey, buffers] : voxelRender.renderBuffers) {
-                    if (!buffers.usesTexturedFaceBuffers) continue;
-                    auto secIt = voxelWorld.sections.find(sectionKey);
-                    if (secIt == voxelWorld.sections.end()) continue;
-                    const VoxelSection& section = secIt->second;
-                    if (!mapViewActive
-                        && !RenderInitSystemLogic::shouldRenderVoxelSection(baseSystem, section, reflectionCameraPos)) {
-                        continue;
-                    }
+                for (const auto& section : visibleVoxelReflectionSections) {
+                    if (!section.buffers->usesTexturedFaceBuffers) continue;
                     renderer.faceShader->setInt("sectionTier", 0);
                     for (int faceType = 0; faceType < 6; ++faceType) {
-                        int count = buffers.faceBuffers.alphaCounts[faceType];
-                        if (count > 0 && buffers.faceBuffers.alphaVaos[faceType] != 0) {
+                        int count = section.buffers->faceBuffers.alphaCounts[faceType];
+                        if (count > 0 && section.buffers->faceBuffers.alphaVaos[faceType] != 0) {
                             renderer.faceShader->setInt("faceType", faceType);
-                            renderBackend.bindVertexArray(buffers.faceBuffers.alphaVaos[faceType]);
+                            renderBackend.bindVertexArray(section.buffers->faceBuffers.alphaVaos[faceType]);
                             renderBackend.drawArraysTrianglesInstanced(0, 6, count);
                         }
                     }

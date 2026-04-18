@@ -351,7 +351,7 @@ namespace ButtonSystemLogic {
             pushFace(leftA, leftB, leftC, leftD, leftColor);
         }
 
-        void updateButtonState(EntityInstance& inst, ButtonState& state, UIContext& ui, float dt) {
+        void updateButtonState(BaseSystem& baseSystem, EntityInstance& inst, ButtonState& state, UIContext& ui, float dt) {
             bool isMomentary = (inst.buttonMode == "momentary");
             bool isManaged = (inst.buttonMode == "managed");
             bool isStatic = (inst.buttonMode == "static");
@@ -383,6 +383,9 @@ namespace ButtonSystemLogic {
                             ui.pendingActionType = inst.actionType;
                             ui.pendingActionKey = inst.actionKey;
                             ui.pendingActionValue = inst.actionValue;
+                            if (ui.fullscreenActive) {
+                                DawSfxSystemLogic::QueueButtonClick(baseSystem);
+                            }
                             if (inst.actionType == "DawTrack"
                                 || inst.actionType == "DawMidiTrack"
                                 || inst.actionType == "DawAutomationTrack") {
@@ -638,7 +641,7 @@ namespace ButtonSystemLogic {
             if (!instPtr) continue;
             EntityInstance& inst = *instPtr;
             ButtonState& state = g_buttonStates[inst.instanceID];
-            updateButtonState(inst, state, ui, dt);
+            updateButtonState(baseSystem, inst, state, ui, dt);
         }
 
         ui.uiLeftPressed = false;

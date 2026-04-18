@@ -1099,10 +1099,7 @@ namespace VoxelLightingSystemLogic {
             if (!sectionChanged) continue;
             section.editVersion += 1;
             section.dirty = true;
-            voxelWorld.dirtySections.insert(key);
-            if (baseSystem.voxelRender) {
-                baseSystem.voxelRender->renderBuffersDirty.insert(key);
-            }
+            voxelWorld.markSectionDirty(key);
             changedSections += 1;
         }
 
