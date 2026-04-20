@@ -56,6 +56,14 @@ namespace KeyboardInputSystemLogic {
             return std::get<bool>(it->second);
         }
 
+        std::string getRegistryString(const BaseSystem& baseSystem, const char* key, const char* fallback) {
+            if (!baseSystem.registry) return fallback;
+            auto it = baseSystem.registry->find(key);
+            if (it == baseSystem.registry->end()) return fallback;
+            if (!std::holds_alternative<std::string>(it->second)) return fallback;
+            return std::get<std::string>(it->second);
+        }
+
     }
 
     void ProcessKeyboardInput(BaseSystem& baseSystem, std::vector<Entity>& prototypes, float dt, PlatformWindowHandle win) {
@@ -87,10 +95,15 @@ namespace KeyboardInputSystemLogic {
             PlayerContext& player = *baseSystem.player;
             const bool fishingRodPlaced = (baseSystem.fishing && baseSystem.fishing->rodPlacedInWorld);
             const bool fishingUnlocked = (!baseSystem.fishing) || baseSystem.fishing->starterRodSpawned;
+            const std::string levelKey = getRegistryString(baseSystem, "level", "");
+            const bool devLevelActive = (levelKey == "dev" || levelKey == "dev_level");
             std::vector<BuildModeType> cycleModes;
-            cycleModes.reserve(4);
+            cycleModes.reserve(5);
             cycleModes.push_back(BuildModeType::Pickup);
             cycleModes.push_back(BuildModeType::PickupLeft);
+            if (devLevelActive) {
+                cycleModes.push_back(BuildModeType::MiniModel);
+            }
             if (fishingUnlocked && !fishingRodPlaced) {
                 cycleModes.push_back(BuildModeType::Fishing);
             }
@@ -114,6 +127,14 @@ namespace KeyboardInputSystemLogic {
                 idx = (idx + 1) % static_cast<int>(cycleModes.size());
                 player.buildMode = cycleModes[static_cast<size_t>(idx)];
                 loadActiveHeldBlockForMode(player, player.buildMode);
+                if (player.buildMode == BuildModeType::MiniModel) {
+                    player.isHoldingBlock = false;
+                    player.heldPrototypeID = -1;
+                    player.heldBlockColor = glm::vec3(1.0f);
+                    player.heldPackedColor = 0u;
+                    player.heldHasSourceCell = false;
+                    player.heldSourceCell = glm::ivec3(0);
+                }
                 player.isChargingBlock = false;
                 player.blockChargeValue = 0.0f;
                 player.blockChargeReady = false;
@@ -123,7 +144,8 @@ namespace KeyboardInputSystemLogic {
                 if (baseSystem.hud) {
                     baseSystem.hud->showCharge = false;
                     bool buildActive = (isPickupHandMode(player.buildMode)
-                                     || player.buildMode == BuildModeType::Fishing);
+                                     || player.buildMode == BuildModeType::Fishing
+                                     || player.buildMode == BuildModeType::MiniModel);
                     baseSystem.hud->buildModeActive = buildActive;
                     baseSystem.hud->buildModeType = static_cast<int>(player.buildMode);
                     baseSystem.hud->displayTimer = buildActive ? 2.0f : 0.0f;

@@ -1,8 +1,0 @@
-{
-  "name": "WireframeBlock",
-  "isBlock": true,
-  "isChunkable": true,
-  "isSolid": true,
-  "isAnimated": true,
-  "hasWireframe": true
-}

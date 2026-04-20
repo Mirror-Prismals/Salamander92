@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "id": "starter_mini_model",
+  "world": "StructureDevWorld",
+  "bounds": {
+    "min": [12, 1, 12],
+    "size": [1, 1, 1]
+  },
+  "output": "MiniModels/starter_mini_model.json"
+}

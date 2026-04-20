@@ -44,6 +44,7 @@
   "GemSystem": true,
   "FishingSystem": true,
   "BuildSystem": true,
+  "MiniModelSystem": true,
   "HUDSystem": true,
   "ColorEmotionSystem": true,
   "ExpanseBiomeSystem": true,

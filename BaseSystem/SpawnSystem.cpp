@@ -77,6 +77,33 @@ namespace SpawnSystemLogic {
         }
     }
 
+    std::string getRegistryString(const BaseSystem& baseSystem,
+                                  const std::string& key,
+                                  const std::string& fallback = "") {
+        if (!baseSystem.registry) return fallback;
+        auto it = baseSystem.registry->find(key);
+        if (it == baseSystem.registry->end()) return fallback;
+        if (!std::holds_alternative<std::string>(it->second)) return fallback;
+        return std::get<std::string>(it->second);
+    }
+
+    bool levelContainsWorldNamed(const LevelContext& level, const std::string& worldName) {
+        if (worldName.empty()) return false;
+        for (const Entity& world : level.worlds) {
+            if (world.name == worldName) return true;
+        }
+        return false;
+    }
+
+    bool levelExpectsExpanseVoxelSpawn(const BaseSystem& baseSystem) {
+        if (!baseSystem.level || !baseSystem.world || !baseSystem.world->expanse.loaded) return false;
+        const LevelContext& level = *baseSystem.level;
+        const ExpanseConfig& expanse = baseSystem.world->expanse;
+        return levelContainsWorldNamed(level, expanse.terrainWorld)
+            || levelContainsWorldNamed(level, expanse.waterWorld)
+            || levelContainsWorldNamed(level, expanse.treesWorld);
+    }
+
     bool isLandSurface(const WorldContext& worldCtx, float x, float z, int* outSurfaceY) {
         float sampledHeight = 0.0f;
         const bool isLand = ExpanseBiomeSystemLogic::SampleTerrain(worldCtx, x, z, sampledHeight);
@@ -524,8 +551,16 @@ namespace SpawnSystemLogic {
         if (getRegistryBool(baseSystem, "spawn_ready", false)) return;
 
         std::string spawnKey = baseSystem.level->spawnKey.empty() ? "frog_spawn" : baseSystem.level->spawnKey;
-
         SpawnConfig cfg;
+        const std::string levelKey = getRegistryString(baseSystem, "level", "");
+        if (spawnKey == "frog_spawn" && (levelKey == "dev_level" || levelKey == "dev")) {
+            SpawnConfig devCfg;
+            if (loadSpawnConfig("dev_spawn", devCfg)) {
+                cfg = devCfg;
+                spawnKey = "dev_spawn";
+            }
+        }
+
         loadSpawnConfig(spawnKey, cfg);
         float surfaceY = cfg.position.y - 1.001f;
         if (baseSystem.world && baseSystem.world->expanse.loaded) {
@@ -583,7 +618,10 @@ namespace SpawnSystemLogic {
         player.verticalVelocity = 0.0f;
         player.onGround = false;
 
-        if (!baseSystem.world || !baseSystem.world->expanse.loaded) return;
+        if (!levelExpectsExpanseVoxelSpawn(baseSystem)) {
+            if (baseSystem.registry) (*baseSystem.registry)["spawn_ready"] = true;
+            return;
+        }
         int nominalSurface = static_cast<int>(std::floor(surfaceY));
         SpawnSupportHit hit;
         if (!chooseSpawnSupport(baseSystem,

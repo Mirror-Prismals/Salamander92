@@ -1,9 +1,0 @@
-{
-    "init_steps": {},
-    "update_steps": {
-        "RenderOverlays": {
-            "dependencies": ["RendererContext", "PlayerContext"]
-        }
-    },
-    "cleanup_steps": {}
-}

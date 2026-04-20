@@ -1,0 +1,14 @@
+{
+  "update_steps": {
+    "UpdateMiniModels": {
+      "dependencies": [
+        "LevelContext",
+        "WorldContext",
+        "PlayerContext",
+        "HUDContext",
+        "RegistryContext",
+        "MiniModelContext"
+      ]
+    }
+  }
+}

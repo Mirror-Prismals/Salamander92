@@ -22,11 +22,86 @@
 #include "../Render/WebGPUBackend.h"
 
 namespace {
+    struct ResolvedLevelInfo {
+        std::filesystem::path path;
+        std::string canonicalKey;
+        std::vector<std::string> attemptedPaths;
+    };
+
     std::string toLowerCopy(std::string value) {
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
         });
         return value;
+    }
+
+    bool endsWith(const std::string& value, const std::string& suffix) {
+        return value.size() >= suffix.size()
+            && value.compare(value.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+
+    std::string stripJsonSuffix(const std::string& value) {
+        if (endsWith(value, ".json")) {
+            return value.substr(0, value.size() - 5);
+        }
+        return value;
+    }
+
+    bool resolveLevelInfo(const std::string& requestedLevel, ResolvedLevelInfo& outInfo) {
+        namespace fs = std::filesystem;
+
+        outInfo = {};
+        std::vector<fs::path> candidates;
+        std::unordered_set<std::string> seen;
+        auto pushCandidate = [&](const fs::path& path) {
+            const std::string key = path.string();
+            if (seen.insert(key).second) {
+                candidates.push_back(path);
+                outInfo.attemptedPaths.push_back(key);
+            }
+        };
+
+        const std::string raw = requestedLevel;
+        const std::string noJson = stripJsonSuffix(raw);
+
+        if (!raw.empty() && endsWith(raw, ".json")) {
+            pushCandidate(fs::path("Levels") / raw);
+        }
+        if (!noJson.empty()) {
+            pushCandidate(fs::path("Levels") / (noJson + ".json"));
+            pushCandidate(fs::path("Levels") / (noJson + "_level.json"));
+            if (!endsWith(noJson, "_level")) {
+                pushCandidate(fs::path("Levels") / (noJson + "_level_level.json"));
+            }
+        }
+
+        std::error_code ec;
+        for (const fs::path& candidate : candidates) {
+            if (fs::exists(candidate, ec) && !ec && fs::is_regular_file(candidate, ec) && !ec) {
+                outInfo.path = candidate;
+                outInfo.canonicalKey = stripJsonSuffix(requestedLevel);
+                if (outInfo.canonicalKey.empty()) {
+                    outInfo.canonicalKey = candidate.stem().string();
+                }
+                return true;
+            }
+            ec.clear();
+        }
+        return false;
+    }
+
+    void canonicalizeRegistryLevel(std::map<std::string, std::variant<bool, std::string>>& registry) {
+        auto it = registry.find("level");
+        if (it == registry.end() || !std::holds_alternative<std::string>(it->second)) return;
+
+        ResolvedLevelInfo resolved;
+        const std::string requestedLevel = std::get<std::string>(it->second);
+        if (!resolveLevelInfo(requestedLevel, resolved)) return;
+        if (resolved.canonicalKey.empty() || resolved.canonicalKey == requestedLevel) return;
+
+        it->second = resolved.canonicalKey;
+        std::cout << "Host: canonicalized level '" << requestedLevel
+                  << "' -> '" << resolved.canonicalKey << "'" << std::endl;
     }
 
     GraphicsAPI parseGraphicsApi(const std::map<std::string, std::variant<bool, std::string>>& registry) {
@@ -293,6 +368,7 @@ void Host::registerSystemFunctions() {
     functionRegistry["UpdateHUD"] = HUDSystemLogic::UpdateHUD;
     functionRegistry["UpdateColorEmotions"] = ColorEmotionSystemLogic::UpdateColorEmotions;
     functionRegistry["UpdateBuildMode"] = BuildSystemLogic::UpdateBuildMode;
+    functionRegistry["UpdateMiniModels"] = MiniModelSystemLogic::UpdateMiniModels;
     functionRegistry["UpdateUIScreen"] = UIScreenSystemLogic::UpdateUIScreen;
     functionRegistry["UpdateSecurityCamera"] = SecurityCameraSystemLogic::UpdateSecurityCamera;
     functionRegistry["UpdateDimension"] = DimensionSystemLogic::UpdateDimension;
@@ -372,6 +448,7 @@ void Host::registerSystemFunctions() {
 void Host::init() {
     HostPathingLogic::EnsureDataWorkingDirectory();
     loadRegistry();
+    canonicalizeRegistryLevel(registry);
     if (!std::get<bool>(registry["Program"])) { std::cerr << "FATAL: Program not installed. Halting." << std::endl; return; }
 
     baseSystem.level = std::make_unique<LevelContext>();
@@ -387,6 +464,7 @@ void Host::init() {
     baseSystem.rayTracedAudio = std::make_unique<RayTracedAudioContext>();
     baseSystem.hud = std::make_unique<HUDContext>();
     baseSystem.colorEmotion = std::make_unique<ColorEmotionContext>();
+    baseSystem.miniModel = std::make_unique<MiniModelContext>();
     baseSystem.fishing = std::make_unique<FishingContext>();
     baseSystem.gems = std::make_unique<GemContext>();
     baseSystem.ui = std::make_unique<UIContext>();
@@ -567,6 +645,7 @@ void Host::reloadLevel(const std::string& levelName) {
     if (baseSystem.instance) baseSystem.instance = std::make_unique<InstanceContext>();
     if (baseSystem.hud) baseSystem.hud = std::make_unique<HUDContext>();
     if (baseSystem.colorEmotion) baseSystem.colorEmotion = std::make_unique<ColorEmotionContext>();
+    if (baseSystem.miniModel) baseSystem.miniModel = std::make_unique<MiniModelContext>();
     if (baseSystem.fishing) baseSystem.fishing = std::make_unique<FishingContext>();
     if (baseSystem.gems) baseSystem.gems = std::make_unique<GemContext>();
     if (baseSystem.font) baseSystem.font = std::make_unique<FontContext>();
@@ -638,6 +717,7 @@ void Host::reloadLevel(const std::string& levelName) {
     if (!levelName.empty()) {
         registry["level"] = levelName;
     }
+    canonicalizeRegistryLevel(registry);
     if (registry.count("level") && std::holds_alternative<std::string>(registry["level"])) {
         std::cout << "Host: active level after reload = " << std::get<std::string>(registry["level"]) << std::endl;
     }
@@ -805,9 +885,24 @@ void Host::PopulateWorldsFromLevel() {
     loadEntityDirectory("Entities/UI");
 
     std::string levelName = std::get<std::string>(registry["level"]);
-    std::string levelPath = "Levels/" + levelName + "_level.json";
-    std::ifstream levelFile(levelPath);
-    if (!levelFile.is_open()) { std::cerr << "FATAL: Could not open level file " << levelPath << std::endl; exit(-1); }
+    ResolvedLevelInfo resolvedLevel;
+    if (!resolveLevelInfo(levelName, resolvedLevel)) {
+        std::cerr << "FATAL: Could not resolve level '" << levelName << "'. Tried:" << std::endl;
+        for (const std::string& attempted : resolvedLevel.attemptedPaths) {
+            std::cerr << "  - " << attempted << std::endl;
+        }
+        exit(-1);
+    }
+    if (!resolvedLevel.canonicalKey.empty() && resolvedLevel.canonicalKey != levelName) {
+        registry["level"] = resolvedLevel.canonicalKey;
+        levelName = resolvedLevel.canonicalKey;
+    }
+
+    std::ifstream levelFile(resolvedLevel.path);
+    if (!levelFile.is_open()) {
+        std::cerr << "FATAL: Could not open level file " << resolvedLevel.path.string() << std::endl;
+        exit(-1);
+    }
     json levelData = json::parse(levelFile);
 
     if (baseSystem.mirror) {

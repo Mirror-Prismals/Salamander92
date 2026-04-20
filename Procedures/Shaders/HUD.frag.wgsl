@@ -67,8 +67,9 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
     let innerMask = smoothstep(innerHalf - 0.02, innerHalf + 0.005, abs(x));
     var rim = outerMask * (1.0 - innerMask);
 
-    let isBuildMode = (buildModeType == 1) || (buildModeType == 2);
+    let isBuildMode = (buildModeType == 1) || (buildModeType == 2) || (buildModeType == 7);
     let isTextureMode = (buildModeType == 2);
+    let isMiniModelMode = (buildModeType == 7);
     let isDestroyMode = (buildModeType == 3);
     let isFishingMode = (buildModeType == 4);
     let targetFill = select(clamp(fillAmount, 0.0, 1.0), 1.0, isBuildMode);
@@ -97,6 +98,8 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
             } else {
                 color = previewColor;
             }
+        } else if (isMiniModelMode) {
+            color = previewColor;
         } else {
             let idx = clamp(channelIndex, 0, 2);
             let bottomColor = channelColors[idx];

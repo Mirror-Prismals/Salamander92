@@ -451,6 +451,14 @@ namespace TerrainSystemLogic {
             return std::get<std::string>(it->second);
         }
 
+        bool levelContainsWorldNamed(const LevelContext& level, const std::string& worldName) {
+            if (worldName.empty()) return false;
+            for (const Entity& world : level.worlds) {
+                if (world.name == worldName) return true;
+            }
+            return false;
+        }
+
         uint32_t hash2DInt(int x, int z) {
             uint32_t ux = static_cast<uint32_t>(x) * 73856093u;
             uint32_t uz = static_cast<uint32_t>(z) * 19349663u;
@@ -2353,6 +2361,7 @@ namespace TerrainSystemLogic {
     void UpdateExpanseTerrain(BaseSystem& baseSystem, std::vector<Entity>& prototypes, float dt, PlatformWindowHandle win) {
         (void)dt; (void)win;
         if (!baseSystem.level || !baseSystem.instance || !baseSystem.world || !baseSystem.player) return;
+        LevelContext& level = *baseSystem.level;
         WorldContext& worldCtx = *baseSystem.world;
         if (!worldCtx.expanse.loaded) return;
         auto resetVoxelStreamingState = [&]() {
@@ -2424,6 +2433,20 @@ namespace TerrainSystemLogic {
             g_verticalDomainMode = 0;
             g_voxelStreamingPerfStats = {};
         };
+        const bool usesExpanseVoxelWorld =
+            levelContainsWorldNamed(level, worldCtx.expanse.terrainWorld) ||
+            levelContainsWorldNamed(level, worldCtx.expanse.waterWorld) ||
+            levelContainsWorldNamed(level, worldCtx.expanse.treesWorld);
+        if (!usesExpanseVoxelWorld) {
+            if (baseSystem.voxelWorld && baseSystem.voxelWorld->enabled) {
+                resetVoxelStreamingState();
+            }
+            if (baseSystem.voxelWorld) {
+                baseSystem.voxelWorld->enabled = false;
+            }
+            g_voxelLevelKey.clear();
+            return;
+        }
         if (baseSystem.voxelWorld) {
             baseSystem.voxelWorld->enabled = true;
         }

@@ -78,14 +78,7 @@ fn vs_main(input: VSIn) -> VSOut {
         instanceColor = input.colorBranch;
     }
 
-    if (behaviorType == 1) {
-        let d = vec3<f32>(
-            sin(time * 0.5 + instancePos.x * 1.3 + instancePos.y * 0.7) * 0.2,
-            sin(time * 0.5 + instancePos.y * 1.3 + instancePos.z * 0.7) * 0.2,
-            sin(time * 0.5 + instancePos.z * 1.3 + instancePos.x * 0.7) * 0.2
-        );
-        pos = input.position * 1.2 + d;
-    } else if (behaviorType == 2) {
+    if (behaviorType == 2) {
         let d = vec3<f32>(
             sin((instancePos.x + time) * 0.3) * 0.05,
             cos((instancePos.y + time) * 0.3) * 0.05,

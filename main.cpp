@@ -82,6 +82,7 @@
 #include "BaseSystem/GemChiselSystem.cpp"
 #include "BaseSystem/GemSystem.cpp"
 #include "BaseSystem/BuildSystem.cpp"
+#include "BaseSystem/MiniModelSystem.cpp"
 #include "BaseSystem/FishingSystem.cpp"
 #include "BaseSystem/ColorEmotionSystem.cpp"
 #include "BaseSystem/StructurePlacementSystem.cpp"

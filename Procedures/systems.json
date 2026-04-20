@@ -71,6 +71,7 @@
         "GemSystem.json",
         "FishingSystem.json",
         "BuildSystem.json",
+        "MiniModelSystem.json",
         "GravitySystem.json",
         "CollisionSystem.json",
         "HUDSystem.json",

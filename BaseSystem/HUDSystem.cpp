@@ -7,7 +7,10 @@ namespace HUDSystemLogic {
         if (!baseSystem.player || !baseSystem.hud) return;
         PlayerContext& player = *baseSystem.player;
         HUDContext& hud = *baseSystem.hud;
-        bool buildActive = (player.buildMode == BuildModeType::Color || player.buildMode == BuildModeType::Texture);
+        bool miniModelMode = player.buildMode == BuildModeType::MiniModel;
+        bool buildActive = (player.buildMode == BuildModeType::Color
+                         || player.buildMode == BuildModeType::Texture
+                         || miniModelMode);
         bool fishingMode = player.buildMode == BuildModeType::Fishing;
         if (buildActive) {
             hud.buildModeActive = true;
@@ -28,7 +31,7 @@ namespace HUDSystemLogic {
             hud.chargeReady = player.blockChargeReady;
             hud.showCharge = player.isChargingBlock || hud.chargeValue > 0.0f;
         }
-        if (player.isHoldingBlock || (baseSystem.gems && baseSystem.gems->blockModeHoldingGem)) {
+        if (!miniModelMode && (player.isHoldingBlock || (baseSystem.gems && baseSystem.gems->blockModeHoldingGem))) {
             hud.showCharge = false;
         }
     }

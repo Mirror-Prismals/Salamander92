@@ -1,9 +1,0 @@
-{
-    "init_steps": {},
-    "update_steps": {
-        "UpdateSecurityCamera": {
-            "dependencies": ["SecurityCameraContext", "LevelContext", "UIContext", "PlayerContext"]
-        }
-    },
-    "cleanup_steps": {}
-}

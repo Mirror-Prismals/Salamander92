@@ -1,7 +1,0 @@
-{
-  "update_steps": {
-    "UpdateAudioVisualizerFollower": {
-      "dependencies": ["PlayerContext", "LevelContext"]
-    }
-  }
-}

@@ -276,6 +276,33 @@ namespace VoxelMeshUploadSystemLogic {
             return encoded - 1;
         }
 
+        constexpr uint8_t kWaterWaveClassUnknown = 0u;
+        constexpr uint8_t kWaterWaveClassLake = 2u;
+        constexpr uint8_t kWaterWaveClassOcean = 4u;
+        constexpr uint8_t kWaterFoliageMarkerSandDollarZ = 5u;
+        constexpr float kWaterWaveClassAoStride = 8.0f;
+        constexpr float kWaterFaceAoBase = 1.0f;
+
+        uint8_t waterWaveClassFromPackedColor(uint32_t packedColor) {
+            const uint8_t encoded = static_cast<uint8_t>((packedColor >> 24) & 0xffu);
+            const uint8_t marker = static_cast<uint8_t>(encoded & 0x0fu);
+            const uint8_t waveClass = static_cast<uint8_t>((encoded >> 4u) & 0x0fu);
+            if (marker <= kWaterFoliageMarkerSandDollarZ && waveClass <= kWaterWaveClassOcean) {
+                return waveClass;
+            }
+            return kWaterWaveClassUnknown;
+        }
+
+        float waterAoMetadataFromPackedColor(uint32_t packedColor) {
+            uint8_t waveClass = waterWaveClassFromPackedColor(packedColor);
+            if (waveClass == kWaterWaveClassUnknown) {
+                // Older authored water may only have #0080FF RGB. Default it to lake water
+                // so it still routes through the water material instead of the generic color path.
+                waveClass = kWaterWaveClassLake;
+            }
+            return static_cast<float>(waveClass) * kWaterWaveClassAoStride + kWaterFaceAoBase;
+        }
+
         int decodeSurfaceStonePileCount(uint32_t packedColor) {
             const int encoded = static_cast<int>((packedColor >> 24) & 0xffu);
             if (encoded <= 0) return kSurfaceStonePileMin;
@@ -1089,8 +1116,10 @@ namespace VoxelMeshUploadSystemLogic {
                     for (int faceType = 0; faceType < 6; ++faceType) {
                         const glm::ivec3 neighborLocal = glm::ivec3(x, y, z) + kFaceNormals[static_cast<size_t>(faceType)];
                         const uint32_t neighborId = snapshotBlockAt(snapshot, neighborLocal.x, neighborLocal.y, neighborLocal.z);
-                        if (traitsFor(neighborId).opaqueBlock) continue;
-                        if (isLeaf && traitsFor(neighborId).leaf) continue;
+                        const VoxelMeshingPrototypeTraits& neighborTraits = traitsFor(neighborId);
+                        if (neighborTraits.opaqueBlock) continue;
+                        if (traits.water && neighborTraits.water) continue;
+                        if (isLeaf && neighborTraits.leaf) continue;
 
                         FaceInstanceRenderData face{};
                         glm::vec3 normal = glm::vec3(kFaceNormals[static_cast<size_t>(faceType)]);
@@ -1112,11 +1141,14 @@ namespace VoxelMeshUploadSystemLogic {
                         if (isGrassCover) {
                             face.alpha = -14.0f;
                         } else if (traits.water) {
-                            face.alpha = 0.08f;
+                            const bool waterSurfaceFace = (faceType == 2) && !neighborTraits.water;
+                            face.alpha = waterSurfaceFace ? 0.08f : 0.07f;
                         } else if (traits.transparentWave) {
                             face.alpha = 0.06f;
                         }
-                        if (traits.water || traits.transparentWave) {
+                        if (traits.water) {
+                            face.ao = glm::vec4(waterAoMetadataFromPackedColor(packedColorRaw));
+                        } else if (traits.transparentWave) {
                             face.ao = glm::vec4(1.0f);
                         } else {
                             face.ao = computeFaceCornerLighting(

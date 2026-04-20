@@ -71,6 +71,7 @@ bool Host::checkDependencies(const std::vector<std::string>& deps) {
         if (dep == "RayTracedAudioContext" && !baseSystem.rayTracedAudio) return false;
         if (dep == "HUDContext" && !baseSystem.hud) return false;
         if (dep == "ColorEmotionContext" && !baseSystem.colorEmotion) return false;
+        if (dep == "MiniModelContext" && !baseSystem.miniModel) return false;
         if (dep == "FishingContext" && !baseSystem.fishing) return false;
         if (dep == "GemContext" && !baseSystem.gems) return false;
         if (dep == "UIContext" && !baseSystem.ui) return false;

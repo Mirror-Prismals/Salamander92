@@ -1,8 +1,0 @@
-{
-  "name": "Branch",
-  "isBlock": true,
-  "isChunkable": true,
-  "isSolid": true,
-  "isAnimated": false,
-  "hasWireframe": false
-}

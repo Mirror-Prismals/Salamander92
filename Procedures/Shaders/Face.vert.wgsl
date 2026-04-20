@@ -80,6 +80,61 @@ fn hash12(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453123);
 }
 
+fn waterPortRot(a: f32) -> mat2x2<f32> {
+    let c = cos(a);
+    let s = sin(a);
+    return mat2x2<f32>(
+        vec2<f32>(c, s),
+        vec2<f32>(-s, c)
+    );
+}
+
+fn waterPortWaves(p: vec2<f32>, time: f32) -> f32 {
+    let t = time * 1.2;
+    var w = 0.0;
+    let amp = 0.05;
+    let freq = 2.5;
+    var dir = vec2<f32>(1.0, 0.7);
+
+    let phase1 = dot(p, dir) * freq + t;
+    w = w + amp * pow(sin(phase1) * 0.5 + 0.5, 2.0);
+
+    dir = waterPortRot(1.5) * dir;
+    let phase2 = dot(p, dir) * freq * 1.8 + t * 1.3;
+    w = w + amp * 0.5 * pow(sin(phase2) * 0.5 + 0.5, 1.5);
+
+    dir = waterPortRot(2.2) * dir;
+    let phase3 = dot(p, dir) * freq * 3.5 + t * 2.0;
+    w = w + amp * 0.2 * sin(phase3);
+
+    return w;
+}
+
+fn waterPortWaveClassAmplitude(waveClass: i32) -> f32 {
+    if (waveClass == 1) {
+        return 0.78;
+    }
+    if (waveClass == 3) {
+        return 1.12;
+    }
+    if (waveClass == 4) {
+        return 1.32;
+    }
+    return 1.0;
+}
+
+fn waterPortWaveAmplitude(waveClass: i32, strength: f32) -> f32 {
+    return waterPortWaveClassAmplitude(waveClass) * mix(0.85, 1.30, clamp(strength, 0.0, 1.0));
+}
+
+fn waterPortWaveNormal(p: vec2<f32>, time: f32, waveScale: f32) -> vec3<f32> {
+    let e = 0.035;
+    let center = waterPortWaves(p, time);
+    let dx = waterPortWaves(p + vec2<f32>(e, 0.0), time) - center;
+    let dz = waterPortWaves(p + vec2<f32>(0.0, e), time) - center;
+    return normalize(vec3<f32>(-dx * waveScale / e, 1.0, -dz * waveScale / e));
+}
+
 fn decodeWaterWaveClassFromAo(ao: vec4<f32>) -> i32 {
     let maxAo = max(max(ao.x, ao.y), max(ao.z, ao.w));
     let waveClassStride = 8.0;
@@ -229,11 +284,15 @@ fn vs_main(input: VSIn) -> VSOut {
     }
     let isLeafFanGrass = isGrass && ((decodedTileIndex == 328) || (decodedTileIndex == 337));
     let waveClassFromAo = decodeWaterWaveClassFromAo(input.ao);
-    let isWaterSurfaceFace = (isTranslucentFace && (waveClassFromAo > 0) && (faceType == 2))
+    let isTaggedWaterFace = isTranslucentFace
+        && (waveClassFromAo > 0)
+        && (input.alpha > 0.03)
+        && (input.alpha < 0.11);
+    let isWaterSurfaceFace = (isTaggedWaterFace && (input.alpha > 0.075) && (faceType == 2))
         || (isWaterSlopeFace && isSlopeTop && (faceType == 2));
     let isVerticalFace = (faceType == 0) || (faceType == 1) || (faceType == 4) || (faceType == 5);
     let isWaterVerticalSideFace = isVerticalFace
-        && ((isTranslucentFace && (waveClassFromAo > 0)) || isWaterSlopeFace);
+        && (isTaggedWaterFace || isWaterSlopeFace);
     let isSmallLilypadFace = (decodedTileIndex == 36);
     let isBigLilypadFace = (decodedTileIndex >= 428) && (decodedTileIndex <= 431);
     let isLilypadFace = (isSmallLilypadFace || isBigLilypadFace) && (waveClassFromAo > 0);
@@ -256,97 +315,16 @@ fn vs_main(input: VSIn) -> VSOut {
 
     var finalPos = pos + input.offset;
     out.instanceCell = input.offset;
-    if ((isWaterSurfaceFace || isWaterSlopeFace || isWaterVerticalSideFace) && sectionTier == 0) {
-        let waveClass = waveClassFromAo;
-        var ampScale = 2.10;
-        var wavelength = 36.0;
-        var steepness = 0.46;
-        var speedScale = 1.46;
-        var dirA = normalize(vec2<f32>(0.86, 0.51));
-        var dirB = normalize(vec2<f32>(-0.34, 0.94));
-
-        if (waveClass == 1) {
-            // Ponds: new minimum is previous "huge ocean" profile.
-            ampScale = 2.10;
-            wavelength = 36.0;
-            steepness = 0.46;
-            speedScale = 1.46;
-            dirA = normalize(vec2<f32>(0.74, 0.67));
-            dirB = normalize(vec2<f32>(-0.62, 0.78));
-        } else if (waveClass == 2) {
-            // Lakes: larger than ponds.
-            ampScale = 2.90;
-            wavelength = 44.0;
-            steepness = 0.55;
-            speedScale = 1.70;
-            dirA = normalize(vec2<f32>(0.88, 0.47));
-            dirB = normalize(vec2<f32>(-0.29, 0.96));
-        } else if (waveClass == 3) {
-            // Rivers: bigger and directional.
-            ampScale = 3.80;
-            wavelength = 52.0;
-            steepness = 0.64;
-            speedScale = 1.95;
-            dirA = normalize(vec2<f32>(0.99, 0.14));
-            dirB = normalize(vec2<f32>(0.93, 0.37));
-        } else if (waveClass == 4) {
-            // Ocean: largest and longest.
-            ampScale = 5.00;
-            wavelength = 64.0;
-            steepness = 0.74;
-            speedScale = 2.20;
-            dirA = normalize(vec2<f32>(0.95, 0.31));
-            dirB = normalize(vec2<f32>(-0.42, 0.91));
-        }
-
-        let globalStrength = clamp(waterCascadeBrightnessStrength, 0.0, 1.0);
-        // Water cascade scale was tuned for a different shading effect; remap it for geometry waves
-        // so default registry values still yield visible motion.
-        let globalScale = clamp(waterCascadeBrightnessScale * 5.0, 1.0, 8.0);
-        let waveSpeed = max(0.25, waterCascadeBrightnessSpeed) * speedScale;
-
-        // Aggressive baseline so class differences are obvious at default settings.
-        let ampBase = mix(0.035, 0.110, globalStrength) * ampScale;
-        let ampA = ampBase * 0.65;
-        let ampB = ampBase * 0.35;
-        let lenA = max(6.0, wavelength / globalScale);
-        let lenB = max(5.0, (wavelength * 0.62) / globalScale);
-        let kA = 6.28318530718 / lenA;
-        let kB = 6.28318530718 / lenB;
-        let qA = clamp(steepness, 0.0, 0.85);
-        let qB = clamp(steepness * 0.75, 0.0, 0.85);
-
-        let phaseA = dot(dirA, finalPos.xz) * kA + time * waveSpeed;
-        let phaseB = dot(dirB, finalPos.xz) * kB - time * waveSpeed * 0.83;
-        let sA = sin(phaseA);
-        let sB = sin(phaseB);
-        let cA = cos(phaseA);
-        let cB = cos(phaseB);
-
-        let dispX = dirA.x * (qA * ampA) * cA + dirB.x * (qB * ampB) * cB;
-        let dispZ = dirA.y * (qA * ampA) * cA + dirB.y * (qB * ampB) * cB;
-        let dispY = ampA * sA + ampB * sB;
+    let shouldAnimateWaterFace = isWaterSurfaceFace || (isWaterSlopeFace && !isWaterVerticalSideFace);
+    if (shouldAnimateWaterFace && sectionTier == 0) {
+        let waveScale = waterPortWaveAmplitude(waveClassFromAo, waterCascadeBrightnessStrength);
+        let waveTime = time * max(0.25, waterCascadeBrightnessSpeed);
+        let dispY = (waterPortWaves(finalPos.xz, waveTime) - 0.045) * waveScale;
         if (isWaterSurfaceFace) {
-            finalPos = finalPos + vec3<f32>(dispX, dispY, dispZ);
-            let dYdx = ampA * kA * dirA.x * cA + ampB * kB * dirB.x * cB;
-            let dYdz = ampA * kA * dirA.y * cA + ampB * kB * dirB.y * cB;
-            normal = normalize(vec3<f32>(-dYdx, 1.0, -dYdz));
-        } else if (isWaterVerticalSideFace) {
-            // Waterfall side faces: side-to-side sway with a downward marquee delay by height.
-            // Using +y and +time in phase makes the band centers drift downward as time increases.
-            let marqueeSpeed = waveSpeed * 1.32;
-            let sidePhaseA = dot(dirA, finalPos.xz) * (kA * 0.42) + finalPos.y * (kA * 1.08) + time * marqueeSpeed;
-            let sidePhaseB = dot(dirB, finalPos.xz) * (kB * 0.37) + finalPos.y * (kB * 0.81) + time * marqueeSpeed * 0.73;
-            let sideDisp = ((ampA * 0.52) * sin(sidePhaseA) + (ampB * 0.48) * sin(sidePhaseB)) * 0.72;
-            let sideAxis = select(
-                vec2<f32>(0.0, 1.0),
-                vec2<f32>(1.0, 0.0),
-                (faceType == 4) || (faceType == 5)
-            );
-            finalPos.x = finalPos.x + sideAxis.x * sideDisp;
-            finalPos.z = finalPos.z + sideAxis.y * sideDisp;
+            finalPos.y = finalPos.y + dispY;
+            normal = waterPortWaveNormal(finalPos.xz, waveTime, waveScale);
         } else if (isWaterSlopeFace) {
-            finalPos = finalPos + vec3<f32>(dispX, dispY, dispZ);
+            finalPos.y = finalPos.y + dispY;
         }
     }
     if (isLilypadFace && sectionTier == 0) {

@@ -1,7 +1,7 @@
 {
   "level": "the_expanse",
   "spawn": "frog_spawn",
-  "gamemode": "survival",
+  "gamemode": "creative",
   "SpawnSecurityCameraCount": "2",
   "GraphicsAPI": "WebGPU",
   "VSyncEnabled": false,
@@ -554,7 +554,7 @@
   "CaveCeilingStoneGenerationEnabled": true,
   "FoliageWindAnimationEnabled": true,
   "BlockSelectionVisualEnabled": false,
-  "CrosshairEnabled": false,
+  "CrosshairEnabled": true,
   "FPSMeterEnabled": true,
   "CoordinatesMeterEnabled": true,
   "TodaysFishLocationMeterEnabled": false,

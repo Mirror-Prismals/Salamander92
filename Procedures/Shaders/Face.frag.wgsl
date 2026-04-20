@@ -209,6 +209,164 @@ fn sampleGrass(variant: i32, uv: vec2<f32>, useShortSet: bool) -> vec4<f32> {
     return textureSample(grassTexture0, sceneSampler, uv);
 }
 
+fn waterFaceUv(worldPos: vec3<f32>, normal: vec3<f32>) -> vec2<f32> {
+    let an = abs(normal);
+    if (an.y >= an.x && an.y >= an.z) {
+        return worldPos.xz;
+    }
+    if (an.x >= an.z) {
+        return worldPos.zy;
+    }
+    return worldPos.xy;
+}
+
+fn waterPortRot(a: f32) -> mat2x2<f32> {
+    let c = cos(a);
+    let s = sin(a);
+    return mat2x2<f32>(
+        vec2<f32>(c, s),
+        vec2<f32>(-s, c)
+    );
+}
+
+fn waterPortWaves(p: vec2<f32>, time: f32) -> f32 {
+    let t = time * 1.2;
+    var w = 0.0;
+    let amp = 0.05;
+    let freq = 2.5;
+    var dir = vec2<f32>(1.0, 0.7);
+
+    let phase1 = dot(p, dir) * freq + t;
+    w = w + amp * pow(sin(phase1) * 0.5 + 0.5, 2.0);
+
+    dir = waterPortRot(1.5) * dir;
+    let phase2 = dot(p, dir) * freq * 1.8 + t * 1.3;
+    w = w + amp * 0.5 * pow(sin(phase2) * 0.5 + 0.5, 1.5);
+
+    dir = waterPortRot(2.2) * dir;
+    let phase3 = dot(p, dir) * freq * 3.5 + t * 2.0;
+    w = w + amp * 0.2 * sin(phase3);
+
+    return w;
+}
+
+fn waterPortWaveClassAmplitude(waveClass: i32) -> f32 {
+    if (waveClass == 1) {
+        return 0.78;
+    }
+    if (waveClass == 3) {
+        return 1.12;
+    }
+    if (waveClass == 4) {
+        return 1.32;
+    }
+    return 1.0;
+}
+
+fn waterPortWaveAmplitude(waveClass: i32, strength: f32) -> f32 {
+    return waterPortWaveClassAmplitude(waveClass) * mix(0.85, 1.30, clamp(strength, 0.0, 1.0));
+}
+
+fn waterPortWaveNormal(p: vec2<f32>, time: f32, waveScale: f32) -> vec3<f32> {
+    let e = 0.035;
+    let center = waterPortWaves(p, time);
+    let dx = waterPortWaves(p + vec2<f32>(e, 0.0), time) - center;
+    let dz = waterPortWaves(p + vec2<f32>(0.0, e), time) - center;
+    return normalize(vec3<f32>(-dx * waveScale / e, 1.0, -dz * waveScale / e));
+}
+
+fn estimatedWaterPathLength(normalIn: vec3<f32>, viewDir: vec3<f32>, decodedAo: f32) -> f32 {
+    let n = normalize(normalIn);
+    let upness = clamp(abs(n.y), 0.0, 1.0);
+    let viewCos = clamp(abs(dot(n, viewDir)), 0.18, 1.0);
+    let faceVolume = mix(2.20, 0.72, upness);
+    let aoVolume = clamp(1.0 - decodedAo, 0.0, 1.0) * 1.30;
+    return clamp((faceVolume + aoVolume) / viewCos, 0.35, 5.50);
+}
+
+fn applyWaterBeerLambert(refractedCol: vec3<f32>, pathLength: f32) -> vec3<f32> {
+    let absorb = exp(-pathLength * vec3<f32>(0.5, 0.25, 0.1));
+    let volumeTint = vec3<f32>(0.055, 0.19, 0.34);
+    return refractedCol * absorb + volumeTint * (vec3<f32>(1.0) - absorb);
+}
+
+fn waterSkyReflectionColor(reflectedDir: vec3<f32>) -> vec3<f32> {
+    let topSky = clamp(u.topColor.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    let horizonSky = clamp(topSky * 0.72 + vec3<f32>(0.01, 0.015, 0.02), vec3<f32>(0.0), vec3<f32>(1.0));
+    let zenithMix = smoothstep(0.0, 1.0, max(reflectedDir.y, 0.0));
+    return clamp(mix(horizonSky, topSky, zenithMix), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn waterBlockGlassColor(
+    worldPos: vec3<f32>,
+    faceUv: vec2<f32>,
+    normalIn: vec3<f32>,
+    decodedAo: f32,
+    screenUv: vec2<f32>,
+    lightDir: vec3<f32>,
+    ambientLight: vec3<f32>,
+    diffuseLight: vec3<f32>,
+    terrainTextureEnabled: i32,
+    waterPlanarReflectionEnabled: bool
+) -> vec3<f32> {
+    let n = normalize(normalIn);
+    let viewDir = normalize(u.cameraAndScale.xyz - worldPos);
+    let incoming = -viewDir;
+    let reflected = reflect(incoming, n);
+    let fresnel = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0, 1.0), 5.0);
+
+    let skyCol = waterSkyReflectionColor(reflected);
+
+    let faceDepth = clamp(0.40 + (1.0 - decodedAo) * 0.34 + (1.0 - abs(n.y)) * 0.12, 0.0, 1.0);
+    let topSky = clamp(u.topColor.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    var refractedCol = mix(
+        topSky * vec3<f32>(0.52, 0.64, 0.78) + vec3<f32>(0.02, 0.05, 0.09),
+        topSky * vec3<f32>(0.34, 0.48, 0.66) + vec3<f32>(0.02, 0.06, 0.11),
+        faceDepth
+    );
+
+    let pathLength = estimatedWaterPathLength(n, viewDir, decodedAo);
+    refractedCol = applyWaterBeerLambert(refractedCol, pathLength);
+
+    if (terrainTextureEnabled == 1) {
+        let sampleUv = fract(waterFaceUv(worldPos, n) * 0.075 + faceUv * 0.018);
+        let bedTex = textureSample(terrainTextureDirt, sceneSampler, sampleUv).rgb;
+        let bedTint = clamp(bedTex * vec3<f32>(0.72, 0.78, 0.86), vec3<f32>(0.0), vec3<f32>(1.0));
+        let absorbedBedTint = applyWaterBeerLambert(bedTint, pathLength * 0.72);
+        refractedCol = mix(refractedCol, absorbedBedTint, mix(0.08, 0.18, faceDepth));
+    }
+
+    let topSkyInfluence = 0.18 + 0.22 * smoothstep(0.0, 1.0, max(reflected.y, 0.0));
+    refractedCol = mix(refractedCol, topSky * vec3<f32>(0.42, 0.58, 0.78), topSkyInfluence);
+
+    var waterColor = mix(refractedCol, skyCol, clamp(0.12 + fresnel * 0.50, 0.12, 0.62));
+    if (waterPlanarReflectionEnabled) {
+        let reflectionUv = clamp(
+            screenUv + reflected.xz * 0.006,
+            vec2<f32>(0.001),
+            vec2<f32>(0.999)
+        );
+        let reflectionTexel = textureSample(waterReflectionTexture, sceneSampler, reflectionUv).rgb;
+        let reflectionColor = mix(skyCol, reflectionTexel, 0.28);
+        waterColor = mix(waterColor, reflectionColor, clamp(0.04 + fresnel * 0.22, 0.04, 0.22));
+    }
+
+    let nDotL = max(dot(n, lightDir), 0.0);
+    let ambientLevel = clamp(dot(ambientLight, vec3<f32>(0.33333334)), 0.0, 1.0);
+    let diffuseLevel = clamp(dot(diffuseLight, vec3<f32>(0.33333334)), 0.0, 1.0);
+    let lightLevel = clamp(0.90 + ambientLevel * 0.06 + diffuseLevel * (0.02 + 0.04 * nDotL), 0.90, 1.00);
+    let spec = pow(max(dot(reflect(incoming, n), lightDir), 0.0), 96.0);
+    return clamp(waterColor * lightLevel + vec3<f32>(spec * 0.22), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn waterBlockGlassAlpha(worldPos: vec3<f32>, normalIn: vec3<f32>, decodedAo: f32) -> f32 {
+    let n = normalize(normalIn);
+    let viewDir = normalize(u.cameraAndScale.xyz - worldPos);
+    let fresnel = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0, 1.0), 5.0);
+    let faceDepth = clamp(0.40 + (1.0 - decodedAo) * 0.34 + (1.0 - abs(n.y)) * 0.12, 0.0, 1.0);
+    return clamp(mix(0.42, 0.62, faceDepth) + fresnel * 0.08, 0.42, 0.70);
+}
+
 @fragment
 fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
     let behaviorType = u.intParams0.x;
@@ -854,7 +1012,11 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
 
     let isSlopeTop = ((alphaTag <= -5.5) && (alphaTag > -9.5))
         || ((alphaTag <= -25.5) && (alphaTag > -33.5));
-    let isWaterSurfaceFace = (isTranslucentFace && (waterWaveClass > 0) && (faceType == 2))
+    let isTaggedWaterFace = isTranslucentFace
+        && (waterWaveClass > 0)
+        && (alphaTag > 0.03)
+        && (alphaTag < 0.11);
+    let isWaterSurfaceFace = (isTaggedWaterFace && (alphaTag > 0.075) && (faceType == 2))
         || (isWaterSlopeFace && isSlopeTop && (faceType == 2));
     if (isWaterSurfaceFace
         && waterCascadeBrightnessEnabled == 1
@@ -882,87 +1044,23 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
 
     if (isWaterSurfaceFace) {
         let t = u.params.x;
-        var waveSpatial = 0.085;
-        var waveNormalStrength = 2.2;
-        var waveSpeedMul = 1.0;
-        if (waterWaveClass == 1) {
-            // pond
-            waveSpatial = 0.135;
-            waveNormalStrength = 1.6;
-            waveSpeedMul = 0.78;
-        } else if (waterWaveClass == 2) {
-            // lake
-            waveSpatial = 0.095;
-            waveNormalStrength = 2.0;
-            waveSpeedMul = 0.95;
-        } else if (waterWaveClass == 3) {
-            // river
-            waveSpatial = 0.065;
-            waveNormalStrength = 2.6;
-            waveSpeedMul = 1.22;
-        } else if (waterWaveClass == 4) {
-            // ocean
-            waveSpatial = 0.045;
-            waveNormalStrength = 3.1;
-            waveSpeedMul = 1.45;
-        }
-
-        let waveUv = input.worldPos.xz * waveSpatial;
-        let waveA = sin(waveUv.x + t * 0.92 * waveSpeedMul);
-        let waveB = cos(waveUv.y * 1.31 - t * 0.71 * waveSpeedMul);
-        let waveC = sin((waveUv.x + waveUv.y) * 0.73 + t * 0.47 * waveSpeedMul);
-        let wave0 = waveA * 0.58 + waveB * 0.32 + waveC * 0.26;
-
-        let dWaveDx = waveSpatial * (
-            0.58 * cos(waveUv.x + t * 0.92 * waveSpeedMul)
-            + 0.26 * 0.73 * cos((waveUv.x + waveUv.y) * 0.73 + t * 0.47 * waveSpeedMul)
+        let waveTime = t * max(0.25, waterCascadeBrightnessSpeed);
+        let waveScale = waterPortWaveAmplitude(waterWaveClass, waterCascadeBrightnessStrength);
+        let waveA = waterPortWaves(input.worldPos.xz, waveTime);
+        let waveB = waterPortWaves(input.worldPos.zx + vec2<f32>(1.7, -0.9), waveTime * 0.83);
+        let waveNormal = waterPortWaveNormal(input.worldPos.xz, waveTime, waveScale);
+        var waterColor = waterBlockGlassColor(
+            input.worldPos,
+            input.texCoord,
+            waveNormal,
+            decodedAo,
+            input.screenUv,
+            lightDir,
+            ambientLight,
+            diffuseLight,
+            terrainTextureEnabled,
+            waterPlanarReflectionEnabled
         );
-        let dWaveDz = waveSpatial * (
-            -0.32 * 1.31 * sin(waveUv.y * 1.31 - t * 0.71 * waveSpeedMul)
-            + 0.26 * 0.73 * cos((waveUv.x + waveUv.y) * 0.73 + t * 0.47 * waveSpeedMul)
-        );
-        let waveNormal = normalize(vec3<f32>(-dWaveDx * waveNormalStrength, 1.0, -dWaveDz * waveNormalStrength));
-        let nDotL = max(dot(waveNormal, lightDir), 0.0);
-
-        let ambientLevel = clamp(dot(ambientLight, vec3<f32>(0.33333334)), 0.0, 1.0);
-        let diffuseLevel = clamp(dot(diffuseLight, vec3<f32>(0.33333334)), 0.0, 1.0);
-        let dayFactor = clamp(diffuseLevel * 1.2, 0.0, 1.0);
-
-        let depthFromColor = 0.0;
-        let depthFromAo = clamp((1.0 - decodedAo) * 0.28, 0.0, 1.0);
-        let bedVariation = 0.5 + 0.5 * sin(input.worldPos.x * 0.061 + input.worldPos.z * 0.049);
-        let depthFactor = clamp(depthFromColor * 0.0 + depthFromAo * 0.48 + bedVariation * 0.10, 0.0, 1.0);
-        let baseShallowTint = vec3<f32>(0.98, 0.99, 1.0);
-        let baseDeepTint = vec3<f32>(0.88, 0.93, 0.98);
-        var waterColor = mix(baseShallowTint, baseDeepTint, depthFactor * 0.42);
-
-        let refractDir = vec2<f32>(waveNormal.x, waveNormal.z);
-        let refractUv = fract(
-            input.worldPos.xz * (0.050 * (waveSpatial / 0.085))
-            + refractDir * 0.012
-            + vec2<f32>(waveB, waveA) * 0.006
-        );
-        if (terrainTextureEnabled == 1) {
-            let bedTex = textureSample(terrainTextureDirt, sceneSampler, refractUv).rgb;
-            var bedTint = clamp(bedTex * vec3<f32>(0.78, 0.82, 0.86), vec3<f32>(0.0), vec3<f32>(1.0));
-            let refractAmount = mix(0.16, 0.06, depthFactor);
-            waterColor = mix(waterColor, bedTint, refractAmount);
-        }
-
-        let viewDir = normalize(u.cameraAndScale.xyz - input.worldPos);
-        let fresnel = pow(clamp(1.0 - max(dot(waveNormal, viewDir), 0.0), 0.0, 1.0), 4.0);
-        if (waterPlanarReflectionEnabled) {
-            let reflectionUv = clamp(
-                input.screenUv
-                    + refractDir * 0.010
-                    + vec2<f32>(waveB, -waveA) * 0.004,
-                vec2<f32>(0.001),
-                vec2<f32>(0.999)
-            );
-            let reflectionTexel = textureSample(waterReflectionTexture, sceneSampler, reflectionUv).rgb;
-            let reflectionAmount = clamp(0.08 + fresnel * 0.52, 0.0, 0.62);
-            waterColor = mix(waterColor, reflectionTexel, reflectionAmount);
-        }
 
         if (shorelineWaterFaceTagged
             && atlasEnabled == 1
@@ -1001,46 +1099,25 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
             }
         }
 
-        // Keep water closer to authored hue and avoid over-darkening from directional lighting.
-        let lightLevel = clamp(0.92 + ambientLevel * 0.06 + diffuseLevel * (0.02 + 0.04 * nDotL), 0.92, 1.00);
-        bc = clamp(waterColor * lightLevel, vec3<f32>(0.0), vec3<f32>(1.0));
-        let waterGrid = 24.0;
-        let waterLine = 0.05;
-        let wf = fract(input.texCoord * waterGrid);
-        let waterWire = voxelGridLinesEnabled && (wf.x < waterLine || wf.y < waterLine);
-        if (waterWire) {
-            bc = select(
-                vec3<f32>(0.14, 0.18, 0.24),
-                vec3<f32>(0.98, 0.99, 1.0),
-                voxelGridLineInvertColorEnabled
-            );
-        }
-
-        let targetAlpha = mix(0.012, 0.040, depthFactor);
-        outAlpha = clamp(targetAlpha, 0.010, 0.045);
-        if (waterWire) {
-            outAlpha = max(outAlpha, 0.18);
-        }
+        bc = waterColor;
+        outAlpha = waterBlockGlassAlpha(input.worldPos, waveNormal, decodedAo);
     }
 
-    let isWaterSideFace = (isTranslucentFace && (waterWaveClass > 0) && !isWaterSurfaceFace)
+    let isWaterSideFace = (isTaggedWaterFace && !isWaterSurfaceFace)
         || (isWaterSlopeFace && !isWaterSurfaceFace);
     if (isWaterSideFace) {
-        let ambientLevel = clamp(dot(ambientLight, vec3<f32>(0.33333334)), 0.0, 1.0);
-        let diffuseLevel = clamp(dot(diffuseLight, vec3<f32>(0.33333334)), 0.0, 1.0);
-        let nDotL = max(dot(normalize(input.normal), lightDir), 0.0);
-
-        var sideShallowTint = vec3<f32>(0.92, 0.95, 0.98);
-        var sideDeepTint = vec3<f32>(0.74, 0.82, 0.90);
-        let sideDepth = clamp(0.48 + (1.0 - decodedAo) * 0.62, 0.0, 1.0);
-        let sideTint = mix(sideShallowTint, sideDeepTint, sideDepth);
-
-        let sideLight = clamp(
-            0.90 + ambientLevel * 0.06 + diffuseLevel * (0.02 + 0.04 * nDotL),
-            0.90,
-            1.00
+        bc = waterBlockGlassColor(
+            input.worldPos,
+            input.texCoord,
+            input.normal,
+            decodedAo,
+            input.screenUv,
+            lightDir,
+            ambientLight,
+            diffuseLight,
+            terrainTextureEnabled,
+            waterPlanarReflectionEnabled
         );
-        bc = clamp(sideTint * sideLight, vec3<f32>(0.0), vec3<f32>(1.0));
         if (waterfallFoamFaceTagged
             && atlasEnabled == 1
             && tilesPerRow > 0
@@ -1080,21 +1157,7 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
             let foamColor = clamp(foamTexel.rgb * vec3<f32>(1.06, 1.08, 1.10), vec3<f32>(0.0), vec3<f32>(1.0));
             bc = mix(bc, foamColor, foamStrength * 0.86);
         }
-        let waterGrid = 24.0;
-        let waterLine = 0.05;
-        let wf = fract(input.texCoord * waterGrid);
-        let waterWire = voxelGridLinesEnabled && (wf.x < waterLine || wf.y < waterLine);
-        if (waterWire) {
-            bc = select(
-                vec3<f32>(0.12, 0.16, 0.22),
-                vec3<f32>(0.98, 0.99, 1.0),
-                voxelGridLineInvertColorEnabled
-            );
-        }
-        outAlpha = clamp(mix(0.04, 0.12, sideDepth), 0.035, 0.14);
-        if (waterWire) {
-            outAlpha = max(outAlpha, 0.22);
-        }
+        outAlpha = waterBlockGlassAlpha(input.worldPos, input.normal, decodedAo);
     }
 
     if (!isWaterSurfaceFace && underwaterCausticFaceTagged && waterUnderwaterCausticsEnabled) {

@@ -84,6 +84,64 @@ fn blockDamageProgressAt(index: i32) -> f32 {
     return packed.w;
 }
 
+fn estimatedWaterPathLength(normalIn: vec3<f32>, viewDir: vec3<f32>) -> f32 {
+    let n = normalize(normalIn);
+    let upness = clamp(abs(n.y), 0.0, 1.0);
+    let viewCos = clamp(abs(dot(n, viewDir)), 0.18, 1.0);
+    let faceVolume = mix(2.20, 0.72, upness);
+    return clamp(faceVolume / viewCos, 0.35, 5.50);
+}
+
+fn applyWaterBeerLambert(refractedCol: vec3<f32>, pathLength: f32) -> vec3<f32> {
+    let absorb = exp(-pathLength * vec3<f32>(0.5, 0.25, 0.1));
+    let volumeTint = vec3<f32>(0.055, 0.19, 0.34);
+    return refractedCol * absorb + volumeTint * (vec3<f32>(1.0) - absorb);
+}
+
+fn waterBlockGlassColor(
+    worldPos: vec3<f32>,
+    normalIn: vec3<f32>,
+    lightDir: vec3<f32>,
+    ambientLight: vec3<f32>,
+    diffuseLight: vec3<f32>
+) -> vec3<f32> {
+    let n = normalize(normalIn);
+    let viewDir = normalize(u.cameraAndScale.xyz - worldPos);
+    let incoming = -viewDir;
+    let reflected = reflect(incoming, n);
+    let fresnel = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0, 1.0), 5.0);
+
+    let skyCol = mix(
+        vec3<f32>(0.05, 0.10, 0.20),
+        vec3<f32>(0.50, 0.70, 1.00),
+        max(0.0, reflected.y)
+    );
+    let faceDepth = clamp(0.42 + (1.0 - abs(n.y)) * 0.18, 0.0, 1.0);
+    let refractedCol = mix(
+        vec3<f32>(0.96, 0.985, 1.00),
+        vec3<f32>(0.70, 0.82, 0.92),
+        faceDepth
+    );
+    let pathLength = estimatedWaterPathLength(n, viewDir);
+    let absorbedRefractedCol = applyWaterBeerLambert(refractedCol, pathLength);
+
+    var waterColor = mix(absorbedRefractedCol, skyCol, clamp(0.08 + fresnel * 0.52, 0.0, 0.60));
+    let nDotL = max(dot(n, lightDir), 0.0);
+    let ambientLevel = clamp(dot(ambientLight, vec3<f32>(0.33333334)), 0.0, 1.0);
+    let diffuseLevel = clamp(dot(diffuseLight, vec3<f32>(0.33333334)), 0.0, 1.0);
+    let lightLevel = clamp(0.90 + ambientLevel * 0.06 + diffuseLevel * (0.02 + 0.04 * nDotL), 0.90, 1.00);
+    let spec = pow(max(dot(reflect(incoming, n), lightDir), 0.0), 96.0);
+    return clamp(waterColor * lightLevel + vec3<f32>(spec * 0.22), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+fn waterBlockGlassAlpha(worldPos: vec3<f32>, normalIn: vec3<f32>) -> f32 {
+    let n = normalize(normalIn);
+    let viewDir = normalize(u.cameraAndScale.xyz - worldPos);
+    let fresnel = pow(clamp(1.0 - max(dot(n, viewDir), 0.0), 0.0, 1.0), 5.0);
+    let faceDepth = clamp(0.42 + (1.0 - abs(n.y)) * 0.18, 0.0, 1.0);
+    return clamp(mix(0.42, 0.62, faceDepth) + fresnel * 0.08, 0.42, 0.70);
+}
+
 @fragment
 fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
     let behaviorType = u.intParams0.x;
@@ -97,6 +155,10 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
     if (wireframeDebug == 1) {
         return vec4<f32>(input.fragColor, 1.0);
     }
+
+    let lightDir = normalize(u.lightAndGrid.xyz);
+    let ambientLight = u.ambientAndLeaf.xyz;
+    let diffuseLight = u.diffuseAndWater.xyz;
 
     if (blockDamageEnabled == 1
         && behaviorType == 0
@@ -148,7 +210,9 @@ fn fs_main(input: FSIn) -> @location(0) vec4<f32> {
     }
 
     if (behaviorType == 1) {
-        return vec4<f32>(input.fragColor, 0.6);
+        let waterColor = waterBlockGlassColor(input.worldPos, input.normal, lightDir, ambientLight, diffuseLight);
+        let waterAlpha = waterBlockGlassAlpha(input.worldPos, input.normal);
+        return vec4<f32>(waterColor, waterAlpha);
     }
 
     let f = fract(input.texCoord * grid);

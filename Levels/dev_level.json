@@ -6,6 +6,7 @@
     "face_debug_world.json",
     "textured_block_world.json",
     "color_face_block_world.json",
-    "debug_hud_world.json"
+    "debug_hud_world.json",
+    "island_computer_block_world.json"
   ]
 }

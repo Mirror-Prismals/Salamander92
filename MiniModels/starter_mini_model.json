@@ -1,0 +1,22 @@
+{
+  "boundsBlocks": [
+    1,
+    1,
+    1
+  ],
+  "format": "mini_palette_rle_v1",
+  "gridPerBlock": 24,
+  "gridSize": [
+    24,
+    24,
+    24
+  ],
+  "id": "starter_mini_model",
+  "palette": [],
+  "runs": [
+    {
+      "count": 13824,
+      "palette": -1
+    }
+  ]
+}

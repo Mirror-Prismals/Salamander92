@@ -165,6 +165,9 @@ struct Entity {
     bool isUI = false;
     bool useTexture = false;
     std::string textureKey;
+    std::string miniModelAsset;
+    glm::vec3 miniModelOffset = glm::vec3(0.0f);
+    float miniModelScale = 1.0f;
     glm::vec3 fillOrigin; glm::vec3 fillDimensions;
     std::string fillBlockType; std::string fillColor;
     int count = 1;
@@ -197,6 +200,9 @@ void from_json(const nlohmann::json& j, Entity& e) {
     if (j.contains("isUI")) j.at("isUI").get_to(e.isUI);
     if (j.contains("useTexture")) j.at("useTexture").get_to(e.useTexture);
     if (j.contains("textureKey")) j.at("textureKey").get_to(e.textureKey);
+    if (j.contains("miniModelAsset")) j.at("miniModelAsset").get_to(e.miniModelAsset);
+    if (j.contains("miniModelOffset")) j.at("miniModelOffset").get_to(e.miniModelOffset);
+    if (j.contains("miniModelScale")) j.at("miniModelScale").get_to(e.miniModelScale);
     if (j.contains("dampingFactor")) j.at("dampingFactor").get_to(e.dampingFactor);
     if (j.contains("fillOrigin")) j.at("fillOrigin").get_to(e.fillOrigin);
     if (j.contains("fillDimensions")) j.at("fillDimensions").get_to(e.fillDimensions);

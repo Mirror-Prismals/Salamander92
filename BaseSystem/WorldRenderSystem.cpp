@@ -302,6 +302,9 @@ namespace WorldRenderSystemLogic {
                 if (proto.name == "Face_NegY") { faceInstances[3].push_back({instance.position, instance.color, -1, 1.0f, glm::vec4(1.0f), glm::vec2(1.0f), glm::vec2(1.0f)}); continue; }
                 if (proto.name == "Face_PosZ") { faceInstances[4].push_back({instance.position, instance.color, -1, 1.0f, glm::vec4(1.0f), glm::vec2(1.0f), glm::vec2(1.0f)}); continue; }
                 if (proto.name == "Face_NegZ") { faceInstances[5].push_back({instance.position, instance.color, -1, 1.0f, glm::vec4(1.0f), glm::vec2(1.0f), glm::vec2(1.0f)}); continue; }
+                if (MiniModelSystemLogic::AppendRenderableFacesForInstance(baseSystem, proto, instance, faceInstances)) {
+                    continue;
+                }
                 if (proto.name == "Computer" || proto.name == "SecurityCamera") {
                     static const std::array<glm::vec3, 6> kComputerFaceNormals = {
                         glm::vec3(1.0f, 0.0f, 0.0f),
@@ -340,6 +343,7 @@ namespace WorldRenderSystemLogic {
                 }
             }
         }
+        MiniModelSystemLogic::AppendWorkbenchFaces(baseSystem, faceInstances);
 
         if (RenderInitSystemLogic::getRegistryBool(baseSystem, "DebugVoxelRender", false) && baseSystem.voxelWorld) {
             size_t sectionCount = baseSystem.voxelWorld->sections.size();

@@ -1,3 +1,0 @@
-add_subdirectory(unittest)
-add_subdirectory(uidescriptioneditorapp)
-add_subdirectory(gridlayouttestapp)
